@@ -1,0 +1,10 @@
+{
+  "name": "golf-score-hussein",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/engine.test.js && node tests/ui.test.js",
+    "start": "python3 -m http.server 8080"
+  }
+}
