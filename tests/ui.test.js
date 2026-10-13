@@ -1,0 +1,11 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+const handlers={},root={innerHTML:'',addEventListener(k,f){handlers[k]=f},querySelector(){return {focus(){}}}},toast={style:{}};
+const memory={value:null,getItem(){return this.value},setItem(k,v){this.value=v}};
+globalThis.document={querySelector(s){return s==='#app'?root:toast}};globalThis.localStorage=memory;globalThis.window={scrollTo(){}};globalThis.confirm=()=>true;
+await import('../app.js');const click=async dataset=>handlers.click({target:{closest(){return {dataset}}}});const change=async(dataset,value)=>handlers.change({target:{dataset,value}});
+test('화면 1 시작 화면에서 두 게임 제공',()=>{assert.match(root.innerHTML,/일반 게임/);assert.match(root.innerHTML,/후세인 게임/);});
+test('화면 2 후세인 생성·초기 순위 교환·중복 방지',async()=>{await click({act:'new-hussein'});await change({rank:'0'},'2');const r=JSON.parse(memory.value).rounds[0];assert.deepEqual(r.initial,[2,1,0,3]);assert.match(root.innerHTML,/18홀 Par 설정/);});
+test('화면 3 입력 즉시 저장·결과·2등 녹색 강조',async()=>{await click({act:'play'});for(const [i,s] of [3,4,6,7].entries())handlers.input({target:{dataset:{score:String(i)},value:String(s),setCustomValidity(){},reportValidity(){}}});assert.match(root.innerHTML,/A팀 승리/);assert.match(root.innerHTML,/score second/);assert.deepEqual(JSON.parse(memory.value).rounds[0].holes[0].scores,[3,4,6,7]);});
+test('화면 4 후불 완료 내역 변경 후 재정산 표시',async()=>{await click({view:'settlement'});await click({settled:'1'});await click({view:'score'});await change({score:'1'},'5');await click({view:'settlement'});assert.match(root.innerHTML,/재정산이 필요합니다/);});
+test('화면 5 복제 시 지급 및 완료 기록 제거',async()=>{const id=JSON.parse(memory.value).rounds[0].id;await click({act:'home'});await click({act:'duplicate',id});const data=JSON.parse(memory.value).rounds;assert.equal(data.length,2);assert.ok(data[0].settled.every(x=>x===null));assert.notEqual(data[0].id,data[1].id);});
+test('화면 6 확인 후 초기화·목록 이어하기',async()=>{await click({act:'reset'});let data=JSON.parse(memory.value).rounds;assert.ok(data[0].holes.every(h=>h.scores.every(x=>x===null)));await click({act:'home'});await click({act:'open',id:data[1].id});assert.match(root.innerHTML,/A팀|B팀/);});
