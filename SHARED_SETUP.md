@@ -81,3 +81,16 @@
 - Repository Secrets 이름은 `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`입니다. Secrets를 고친 뒤 main의 배포 워크플로를 수동 재실행하세요.
 - 앱 파일은 온라인일 때 새 파일을 확인하고 오프라인일 때 캐시로 동작합니다. 새 서비스 워커가 제어권을 가져오면 기존 탭을 한 번 다시 불러옵니다. Safari 사이트 데이터나 localStorage를 삭제하지 마세요.
 - 실제 Supabase 확인은 배포 앱에서 **연결 확인**, 공동 게임 생성, 다른 휴대폰의 코드 참여 순서로 진행하세요. 조회 성공만으로 RPC·Realtime 성공을 판단하지 마세요.
+
+## 자동 테스트의 WebKit 오프라인 검사
+
+PR #4의 `tests/shared-browser.test.js:329` 실패는 온라인 갱신을 통과한 뒤 `context.setOffline(true)` 상태에서 PWA를 다시 불러올 때 발생했습니다. 이 API는 오래된 Playwright WebKit에서 서비스 워커의 응답까지 차단합니다. 앱 없이 고정 HTML 응답만 반환하는 워커로도 재현되는 [Playwright #42775](https://github.com/microsoft/playwright/issues/42775)와 일치하므로 재실행으로 해결되는 일시적 실패로 취급하지 않습니다.
+
+브라우저 테스트는 양쪽 엔진에서 테스트 서버를 실제 종료한 뒤 다음을 요구합니다.
+
+- 서비스 워커 없는 새 브라우저는 같은 Pages 하위 경로 접속에 실패해야 합니다.
+- 설치된 앱의 새로고침은 HTTP 200 및 `fromServiceWorker()` 응답이어야 하고, 이전 문서가 아닌 새 문서와 기존 로컬 기록을 확인합니다.
+- 캐시에 없는 하위 경로도 워커의 프로젝트 내 `index.html`로 복구해야 합니다.
+- 같은 주소로 서버를 복구한 뒤 실제 워커가 제어하는 앱에서 공동 게임 재참여·점수 저장·다른 참가자의 동기화 및 로컬 원본 보존을 확인합니다.
+
+Chromium의 `setOffline(true)` 새로고침 검사와 모든 엔진의 공동 저장 실패 검사도 유지합니다. 테스트 재시도, 오류 무시, WebKit 테스트 생략은 하지 않습니다. 서버 중단은 네트워크 요청 실패에 대한 캐시 복구 검사이며, 물리적인 iPhone 비행기 모드나 실제 Supabase Auth/Realtime 검증을 대신하지 않습니다. 앱 코드·SQL·계산 및 저장 형식은 이번 테스트 수정에서 변경하지 않습니다.

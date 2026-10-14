@@ -123,6 +123,15 @@ const server = createServer(async (req, res) => {
 });
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 const origin = `http://127.0.0.1:${server.address().port}`;
+async function stopOrigin() {
+  if (!server.listening) return;
+  const closed = new Promise((resolve, reject) =>
+    server.close(error => error ? reject(error) : resolve()),
+  );
+  for (const res of events) res.end();
+  server.closeAllConnections();
+  await closed;
+}
 const sdk = `export function createClient(){
  const call=body=>fetch('/__db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,user:window.__testUser})}).then(r=>r.json());
  return {auth:{async getUser(){return {data:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}},async getSession(){return {data:{session:null}}},async signInAnonymously(){return {data:{session:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}}}},
@@ -310,6 +319,11 @@ try {
   // Real service worker: stale cached modules must not hide the new UI.
   const pwaContext = await browser.newContext({viewport:{width:390,height:844},serviceWorkers:"allow"});
   contexts.push(pwaContext);
+  await pwaContext.addInitScript(() => { window.__testUser = 3; });
+  await pwaContext.route("https://cdn.jsdelivr.net/**", route => route.fulfill({
+    contentType:"application/javascript",
+    headers:{"access-control-allow-origin":"*"}, body:sdk,
+  }));
   const pwa = await pwaContext.newPage();
   pwa.on("pageerror", e => errors.push(e.message));
   await pwa.goto(origin + basePath + "/");
@@ -325,18 +339,69 @@ try {
   await pwa.getByRole("button", {name:"공동 게임으로 복사",exact:true}).waitFor();
   await pwa.locator("#shared-launch").waitFor();
   assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
-  await pwaContext.setOffline(true);
-  await pwa.reload();
+  // WebKit's offline emulation rejects SW responses before the worker can
+  // answer (microsoft/playwright#42775). Keep Chromium's emulation check,
+  // and exercise real network failure in BOTH engines below, without retries.
+  if (browserType === chromium) {
+    await pwaContext.setOffline(true);
+    const response = await pwa.reload();
+    assert.equal(response.status(), 200);
+    assert.equal(response.fromServiceWorker(), true);
+    await pwa.getByRole("button", {name:"공동 게임으로 복사",exact:true}).waitFor();
+    await pwaContext.setOffline(false);
+  }
+  // A rendered UI alone does not prove that background cache.put has finished.
+  await pwa.waitForFunction(async () => {
+    const cache = await caches.open("golf-hussein-v3");
+    const app = await cache.match(new URL("./app.js", location.href));
+    const shared = await cache.match(new URL("./shared-ui.js", location.href));
+    return app && shared && !(await app.text()).includes("STALE_APP") &&
+      (await shared.text()).includes("shared-launch");
+  });
+  await pwa.evaluate(() => { window.__oldDocument = true; });
+  await stopOrigin();
+  assert.equal(server.listening, false);
+  // Negative control: with no worker/cache the exact same URL must fail.
+  const noWorker = await browser.newContext({serviceWorkers:"block"});
+  try {
+    const p = await noWorker.newPage();
+    await assert.rejects(() => p.goto(origin + basePath + "/"),
+      /net::ERR_CONNECTION_REFUSED|Could not connect|Connection refused|cannot connect/i);
+  } finally { await noWorker.close(); }
+  const offlineResponse = await pwa.reload();
+  assert.equal(offlineResponse.status(), 200);
+  assert.equal(offlineResponse.fromServiceWorker(), true);
+  assert.equal(await pwa.evaluate(() => window.__oldDocument), undefined);
+  assert.equal(new URL(pwa.url()).pathname, basePath + "/");
   await pwa.getByRole("button", {name:"공동 게임으로 복사",exact:true}).waitFor();
+  assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
+  // An uncached navigation must use the project-scoped index fallback too.
+  const fallback = await pwa.goto(origin + basePath + "/uncached-offline");
+  assert.equal(fallback.status(), 200);
+  assert.equal(fallback.fromServiceWorker(), true);
+  await pwa.getByRole("button", {name:"공동 게임으로 복사",exact:true}).waitFor();
+  assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
+  // Restore the origin at the same address; the real worker must still allow
+  // authenticated shared RPCs and event delivery after the outage.
+  await new Promise(resolve => server.listen(Number(new URL(origin).port), "127.0.0.1", resolve));
+  await pwa.goto(origin + basePath + "/");
+  await pwa.getByRole("button", {name:"참여 코드로 참여",exact:true}).click();
+  await pwa.locator("#shared-name").fill("참가자3");
+  await pwa.locator("#shared-code").fill(code);
+  await pwa.locator('[data-shared="join"]').click();
+  await pwa.locator("#shared-score-0").fill("10");
+  await pwa.locator("#shared-score-0").press("Tab");
+  await waitSaved(pwa);
+  await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").value === "10");
+  assert.match(await pwa.locator("#shared-checks").innerText(), /RPC: 실행 확인됨/);
   assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   await pwaContext.close();
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: 5 isolated mobile browsers + PostgreSQL: create/join/capacity/all-player edits/event sync/Near/lock/owner unlock/history/offline/list/full local preservation/config and auth failures/service worker stale cache and offline",
+    "PASS: 5 isolated mobile browsers + PostgreSQL: create/join/capacity/all-player edits/event sync/Near/lock/owner unlock/history/offline/list/full local preservation/config and auth failures/service worker stale cache/network outage reload/uncached project-path fallback/negative control/shared recovery",
   );
 } finally {
   await browser.close();
-  for (const res of events) res.end();
-  await new Promise((r) => server.close(r));
+  await stopOrigin();
   await db.close();
 }
