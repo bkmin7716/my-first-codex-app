@@ -1,3 +1,4 @@
+import { sharedConfig } from "./shared-config.js";
 import { connectShared } from "./shared.js";
 import { createRound, calculate } from "./engine.js";
 import { load } from "./storage.js";
@@ -17,10 +18,13 @@ let api = null,
   busy = false,
   editing = false,
   editRevision = null,
-  status = "온라인 연결 필요",
+  status = sharedConfig.url && sharedConfig.publishableKey ? "설정 주입됨 · 실제 연결 미확인" : "배포 설정 누락 · 공동 플레이 연결 불가",
   error = "",
   page = "score",
-  gamesList = null;
+  gamesList = null,
+  selectedSource = "",
+  draftName = "",
+  draftCode = new URLSearchParams(location.hash.slice(1)).get("join") || "";
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -51,10 +55,16 @@ function localRounds() {
     return [];
   }
 }
+function checksText() {
+  const c = api?.checks;
+  return `배포 설정: ${!sharedConfig.url || !sharedConfig.publishableKey ? "누락" : /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(sharedConfig.url) ? "주입됨 (연결은 별도 확인)" : "URL 형식 오류"} · 로그인: ${c?.auth || "미확인"} · 서버 조회: ${c?.query || "미확인"} · RPC: ${c?.rpc || "미확인"}`;
+}
 function setStatus(value) {
   status = value;
   const el = panel.querySelector("#shared-status");
   if (el) el.textContent = value;
+  const checks = panel.querySelector("#shared-checks");
+  if (checks) checks.textContent = checksText();
 }
 async function connection() {
   if (!api)
@@ -64,14 +74,14 @@ async function connection() {
   return api;
 }
 function lobby() {
-  return `<h1>4명 공동 플레이</h1><p>각자의 휴대폰에서 같은 스코어를 입력하고 확인하세요. 공동 게임은 인터넷 연결이 필요합니다.</p><div class="card"><label for="shared-name">내 표시 이름 (변경 이력에 기록)</label><input id="shared-name" maxlength="40" placeholder="예: 민수"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(new URLSearchParams(location.hash.slice(1)).get("join") || "")}"><button class="primary" data-shared="join">코드로 참여</button></div><div class="card"><h3>공동 게임 생성</h3><p class="muted">로컬에서 선수·골프장·18홀 Par·초기 순위·정산 방식을 설정한 뒤 복사할 수 있습니다. 원본은 유지됩니다. 공동 게임 생성 후에는 단가 외 설정이 고정됩니다.</p><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="">새 후세인 게임 (선수 1~4, 기본 Par)</option>${localRounds()
+  return `<h1>4명 공동 플레이</h1><button data-shared="check">연결 확인 (익명 로그인·서버 조회)</button><p>각자의 휴대폰에서 같은 스코어를 입력하고 확인하세요. 공동 게임은 인터넷 연결이 필요합니다.</p><div class="card"><label for="shared-name">내 표시 이름 (변경 이력에 기록)</label><input id="shared-name" maxlength="40" placeholder="예: 민수" value="${esc(draftName)}"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(draftCode)}"><button class="primary" data-shared="join">코드로 참여</button></div><div class="card"><h3>공동 게임 생성</h3><p class="muted">로컬에서 선수·골프장·18홀 Par·초기 순위·정산 방식을 설정한 뒤 복사할 수 있습니다. 원본과 기존 스코어·지급·정산 기록은 유지됩니다. 공동 게임 생성 후에는 단가 외 설정이 고정됩니다.</p><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="">새 후세인 게임 (선수 1~4, 기본 Par)</option>${localRounds()
     .map(
       (r) =>
-        `<option value="${esc(r.id)}">${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`,
+        `<option value="${esc(r.id)}" ${selectedSource === r.id ? "selected" : ""}>${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`,
     )
     .join(
       "",
-    )}</select><button class="primary" data-shared="create">공동 게임 생성</button></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList === null ? "" : gamesList.length ? gamesList.map((g) => `<div class="card"><strong>${esc(g.round.course || "공동 라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized ? "최종 확정" : "진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join("") : "<p>참여한 공동 게임이 없습니다.</p>"}</div><p class="muted">아직 연결 설정을 하지 않았다면 저장소의 SHARED_SETUP.md 한국어 안내를 따라 Supabase를 설정하세요.</p>`;
+    )}</select><button class="primary" data-shared="create">공동 게임 생성</button></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList === null ? "" : gamesList.length ? gamesList.map((g) => `<div class="card"><strong>${esc(g.round.course || "공동 라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized ? "최종 확정" : "진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join("") : "<p>참여한 공동 게임이 없습니다.</p>"}</div><p class="muted">설정 누락 시 배포 관리자에게 문의하세요. 새 공동 게임의 선수 이름과 골프장 등은 로컬 라운드에서 설정한 후 복사하세요.</p>`;
 }
 function gameView() {
   const g = api.game,
@@ -101,7 +111,8 @@ function history() {
 }
 function render() {
   if (panel.hidden) return;
-  panel.innerHTML = `<div class="row"><strong>Golf Score & Hussein · 공동 플레이</strong><button data-shared="local">로컬 라운드로</button></div><p id="shared-status" role="status">${esc(status)}${busy ? " · 저장 중" : ""}</p><p id="shared-error" role="alert" class="warning" ${error ? "" : "hidden"}>${esc(error)}</p>${api?.game ? gameView() : lobby()}`;
+  panel.dataset.revision = api?.game?.revision ?? "";
+  panel.innerHTML = `<div class="row"><strong>Golf Score & Hussein · 공동 플레이</strong><button data-shared="local">로컬 라운드로</button></div><p id="shared-status" role="status">${esc(status)}${busy ? " · 저장 중" : ""}</p><p id="shared-checks" class="muted">${esc(checksText())}</p><p id="shared-error" role="alert" class="warning" ${error ? "" : "hidden"}>${esc(error)}</p>${api?.game ? gameView() : lobby()}`;
   panel.querySelectorAll("button,input,select").forEach((el) => {
     if (busy) el.disabled = true;
   });
@@ -114,6 +125,18 @@ function show() {
   render();
 }
 launcher.querySelector("button").addEventListener("click", show);
+localRoot.addEventListener("click", (e) => {
+  const entry = e.target.closest("[data-shared-entry]");
+  if (!entry) return;
+  selectedSource = entry.dataset.source || "";
+  show();
+  panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-name")?.focus();
+});
+panel.addEventListener("input", (e) => {
+  if (e.target.id === "shared-name") draftName = e.target.value;
+  if (e.target.id === "shared-code") draftCode = e.target.value;
+  if (e.target.id === "shared-source") selectedSource = e.target.value;
+});
 panel.addEventListener("focusin", (e) => {
   if (e.target.matches("[data-shared-score],#shared-near,#shared-rate")) {
     editing = true;
@@ -137,7 +160,8 @@ async function run(fn) {
       .forEach((el) => (el.disabled = true));
     await task;
   } catch (e) {
-    error = e.message;
+    error = /^(참가 인원 4명이 모두 찼습니다|참여 코드를 확인하세요|내 표시 이름을 1~40자로 입력하세요|로컬 라운드를 다시 선택하세요|타수는 1~30 정수로 입력하세요|최종 확정된 게임입니다|다른 참가자가 수정했습니다\. 최신 내용을 확인 후 다시 입력하세요|잠긴 홀입니다\. 생성자에게 잠금 해제를 요청하세요|생성자만 홀 잠금을 해제할 수 있습니다|최종 확정 잠금 상태입니다|설정·지급 기록은 생성자만 수정할 수 있습니다|단가 수정 전 모든 홀의 잠금을 해제하세요|모든 선수의 타수를 입력하세요|18홀을 모두 잠근 후 최종 확정하세요)[.!]?$/.test(e.message) ? e.message : "공동 플레이 요청 실패. 설정·익명 로그인 허용·SQL 설치·네트워크를 확인하세요.";
+    setStatus("요청 실패 · 연결 확인 결과와 안내를 확인하세요.");
   } finally {
     busy = false;
     editing = false;
@@ -202,6 +226,7 @@ panel.addEventListener("click", (e) => {
   }
   if (act === "lobby") {
     api.stop();
+    setStatus("공동 게임 연결 종료 · 목록에서 다시 여세요.");
     render();
     return;
   }
@@ -211,12 +236,18 @@ panel.addEventListener("click", (e) => {
     return;
   }
   run(async () => {
+    if (act === "check") {
+      const c = await connection();
+      gamesList = await c.list();
+      return;
+    }
     if (act === "create" || act === "join") {
       const name = panel.querySelector("#shared-name").value.trim();
       if (!name || name.length > 40)
         throw Error("내 표시 이름을 1~40자로 입력하세요.");
       const code = panel.querySelector("#shared-code").value.trim();
       const source = panel.querySelector("#shared-source").value;
+      selectedSource = source;
       const c = await connection();
       if (act === "join") {
         await c.join(code, name);
@@ -226,10 +257,6 @@ panel.addEventListener("click", (e) => {
           ? structuredClone(localRounds().find((r) => r.id === source))
           : createRound("hussein");
         if (!r) throw Error("로컬 라운드를 다시 선택하세요.");
-        r.holes.forEach((h) => (h.paid = null));
-        r.cash = [];
-        r.settled = Array(4).fill(null);
-        r.finished = false;
         await c.create(r, name);
       }
       hole = 0;

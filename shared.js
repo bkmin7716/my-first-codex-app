@@ -14,29 +14,46 @@ export class SharedGames {
     this.generation = 0;
     this.busy = false;
     this.reading = false;
+    this.realtime = false;
+    this.checks = { auth: "미확인", query: "미확인", rpc: "미확인" };
   }
   async identity() {
+    this.checks.auth = "확인 중";
+    this.onStatus("익명 로그인 확인 중");
     const { data, error } = await this.client.auth.getSession();
-    if (error) throw error;
+    if (error) { this.checks.auth = "실패"; throw Error("익명 로그인 세션 조회 실패"); }
     let session = data.session;
     if (!session) {
       const result = await this.client.auth.signInAnonymously();
-      if (result.error) throw result.error;
+      if (result.error) { this.checks.auth = "실패"; throw Error("익명 로그인 실패 · Supabase에서 익명 로그인을 허용했는지 확인하세요."); }
       session = result.data.session;
     }
-    this.userId = session.user.id;
+    if (!session?.user?.id) { this.checks.auth = "실패"; throw Error("익명 로그인 세션을 확인할 수 없습니다."); }
+    // getSession may only read local storage; verify the identity with Auth.
+    const verified = await this.client.auth.getUser();
+    if (verified.error || verified.data?.user?.id !== session.user.id) {
+      this.checks.auth = "실패";
+      throw Error("익명 로그인 서버 확인 실패");
+    }
+    this.checks.auth = "확인됨";
+    this.userId = verified.data.user.id;
+    this.onStatus("로그인 확인됨 · 서버 요청 대기");
     return this.userId;
   }
   async rpc(name, args) {
+    this.checks.rpc = "확인 중";
     const { data, error } = await this.client.rpc(name, args);
-    if (error) throw Error(error.message);
+    if (error) { this.checks.rpc = "요청 실패"; throw Error(error.message); }
     // PostgREST can encode composite-returning RPCs as a one-row array.
     const game = Array.isArray(data)
       ? data.length === 1
         ? data[0]
         : null
       : data;
-    if (!game?.id) throw Error("서버의 게임 응답을 확인할 수 없습니다.");
+    if (!game?.id) { this.checks.rpc = "응답 오류"; throw Error("서버의 게임 응답을 확인할 수 없습니다."); }
+    validateRound(game.round);
+    this.checks.rpc = "실행 확인됨";
+    this.onStatus("로그인·RPC 실행 확인됨 · 게임 동기화 확인 중");
     return game;
   }
   async create(round, name) {
@@ -60,7 +77,9 @@ export class SharedGames {
       .from("golf_games")
       .select("*")
       .order("updated_at", { ascending: false });
-    if (error) throw Error(error.message);
+    if (error) { this.checks.query = "실패"; throw Error(error.message); }
+    this.checks.query = "확인됨";
+    this.onStatus("로그인·서버 조회 확인됨 · RPC 실행은 게임 생성/참여 시 확인");
     return data;
   }
   async open(id) {
@@ -100,6 +119,8 @@ export class SharedGames {
         () => this.refresh(),
       )
       .subscribe((status) => {
+        if (generation !== this.generation) return;
+        this.realtime = status === "SUBSCRIBED";
         if (generation === this.generation)
           this.onStatus(
             status === "SUBSCRIBED"
@@ -139,11 +160,14 @@ export class SharedGames {
       this.accept(g.data);
       this.members = m.data;
       this.audit = a.data;
+      this.checks.query = "확인됨";
+      this.onStatus(this.realtime ? "실시간 연결됨 · 서버 조회 확인됨" : "서버 조회 확인됨 · 실시간 연결 확인 중 · 5초마다 갱신");
       this.onUpdate(this);
     } catch (error) {
+      if (generation === this.generation) this.checks.query = "실패";
       if (generation === this.generation)
         this.onStatus(
-          `연결 실패 · 수정은 서버 확인 후 반영됩니다: ${error.message}`,
+          "서버 조회 실패 · 연결 상태 미확인 · 자동 재시도 중",
         );
     } finally {
       this.reading = false;
@@ -178,6 +202,9 @@ export class SharedGames {
     if (this.channel) this.client.removeChannel(this.channel);
     this.channel = null;
     this.game = null;
+    this.members = [];
+    this.audit = [];
+    this.realtime = false;
   }
 }
 
