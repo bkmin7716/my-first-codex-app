@@ -4,7 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/engine.test.js && node tests/ui.test.js",
-    "start": "python3 -m http.server 8080"
+    "test": "node tests/engine.test.js && node tests/ui.test.js && node tests/shared-client.test.js && node tests/shared-db.test.js",
+    "start": "python3 -m http.server 8080",
+    "test:browser": "node tests/shared-browser.test.js"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
+    "playwright": "1.56.1"
   }
 }
