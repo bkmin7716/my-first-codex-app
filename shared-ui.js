@@ -1,5 +1,5 @@
 import { sharedConfig } from "./shared-config.js";
-import { connectShared } from "./shared.js";
+import { connectShared, diagnosticText } from "./shared.js";
 import { createRound, calculate } from "./engine.js";
 import { load } from "./storage.js";
 
@@ -59,12 +59,24 @@ function checksText() {
   const c = api?.checks;
   return `배포 설정: ${!sharedConfig.url || !sharedConfig.publishableKey ? "누락" : /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(sharedConfig.url) ? "주입됨 (연결은 별도 확인)" : "URL 형식 오류"} · 로그인: ${c?.auth || "미확인"} · 서버 조회: ${c?.query || "미확인"} · RPC: ${c?.rpc || "미확인"}`;
 }
+function diagnostics() {
+  return [...(api?.diagnostics.values() || [])].map(e => `<li>${esc(e.operation)} · ${esc(e.state)} · ${esc(e.time)}${e.error ? ` · 코드 ${esc(e.error.code)}${e.error.status ? ` · HTTP ${esc(e.error.status)}` : ""} · ${esc(e.error.message)} ${esc(e.error.details)} ${esc(e.error.hint)}` : ""}</li>`).join("");
+}
+function updateDiagnostics() {
+  const list = panel.querySelector("#shared-diagnostics");
+  if (list) list.innerHTML = diagnostics();
+  const alert = panel.querySelector("#shared-error");
+  const failures = [...(api?.diagnostics.values() || [])].filter(e => e.state === "실패");
+  const text = [error, ...failures.map(e => `${e.operation} 실패 · ${e.error.code}: ${e.error.message}`)].filter(Boolean).join("\n");
+  if (alert) { alert.textContent = text; alert.hidden = !text; }
+}
 function setStatus(value) {
   status = value;
   const el = panel.querySelector("#shared-status");
   if (el) el.textContent = value;
   const checks = panel.querySelector("#shared-checks");
   if (checks) checks.textContent = checksText();
+  updateDiagnostics();
 }
 async function connection() {
   if (!api)
@@ -112,7 +124,8 @@ function history() {
 function render() {
   if (panel.hidden) return;
   panel.dataset.revision = api?.game?.revision ?? "";
-  panel.innerHTML = `<div class="row"><strong>Golf Score & Hussein · 공동 플레이</strong><button data-shared="local">로컬 라운드로</button></div><p id="shared-status" role="status">${esc(status)}${busy ? " · 저장 중" : ""}</p><p id="shared-checks" class="muted">${esc(checksText())}</p><p id="shared-error" role="alert" class="warning" ${error ? "" : "hidden"}>${esc(error)}</p>${api?.game ? gameView() : lobby()}`;
+  panel.innerHTML = `<div class="row"><strong>Golf Score & Hussein · 공동 플레이</strong><button data-shared="local">로컬 라운드로</button></div><p id="shared-status" role="status">${esc(status)}${busy ? " · 저장 중" : ""}</p><p id="shared-checks" class="muted">${esc(checksText())}</p><p id="shared-error" role="alert" class="warning" ${error ? "" : "hidden"}>${esc(error)}</p><details><summary>요청별 진단 결과</summary><ul id="shared-diagnostics">${diagnostics()}</ul></details>${api?.game ? gameView() : lobby()}`;
+  updateDiagnostics();
   panel.querySelectorAll("button,input,select").forEach((el) => {
     if (busy) el.disabled = true;
   });
@@ -160,8 +173,8 @@ async function run(fn) {
       .forEach((el) => (el.disabled = true));
     await task;
   } catch (e) {
-    error = /^(참가 인원 4명이 모두 찼습니다|참여 코드를 확인하세요|내 표시 이름을 1~40자로 입력하세요|로컬 라운드를 다시 선택하세요|타수는 1~30 정수로 입력하세요|최종 확정된 게임입니다|다른 참가자가 수정했습니다\. 최신 내용을 확인 후 다시 입력하세요|잠긴 홀입니다\. 생성자에게 잠금 해제를 요청하세요|생성자만 홀 잠금을 해제할 수 있습니다|최종 확정 잠금 상태입니다|설정·지급 기록은 생성자만 수정할 수 있습니다|단가 수정 전 모든 홀의 잠금을 해제하세요|모든 선수의 타수를 입력하세요|18홀을 모두 잠근 후 최종 확정하세요)[.!]?$/.test(e.message) ? e.message : "공동 플레이 요청 실패. 설정·익명 로그인 허용·SQL 설치·네트워크를 확인하세요.";
-    setStatus("요청 실패 · 연결 확인 결과와 안내를 확인하세요.");
+    error = e.operation ? "" : `화면 작업 실패: ${diagnosticText(e.message)}`;
+
   } finally {
     busy = false;
     editing = false;
@@ -326,7 +339,7 @@ panel.addEventListener("click", (e) => {
 });
 function historyReplace() {
   if (location.hash.startsWith("#join="))
-    history.replaceState(null, "", location.pathname + location.search);
+    window.history.replaceState(null, "", location.pathname + location.search);
 }
 if (new URLSearchParams(location.hash.slice(1)).has("join")) show();
 document.addEventListener("visibilitychange", () => {

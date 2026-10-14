@@ -228,9 +228,17 @@ try {
   ).replace("참여 코드 ", "");
   assert.match(code, /^[A-F0-9]{12}$/);
   for (let i = 1; i < 4; i++) {
+    if (i === 1) {
+      await pages[i].goto(origin + basePath + "/#join=" + code);
+      await pages[i].reload();
+      await pages[i].locator("#shared-name").fill("참가자1");
+    }
     await pages[i].locator("#shared-code").fill(code);
     await pages[i].locator('[data-shared="join"]').click();
     await pages[i].locator("#shared-score-0").waitFor();
+    await waitSaved(pages[i]);
+    assert.equal(await pages[i].getByRole("alert").count(), 0);
+    if (i === 1) assert.equal(new URL(pages[i].url()).hash, "");
   }
   await pages[4].locator("#shared-code").fill(code);
   await pages[4].locator('[data-shared="join"]').click();

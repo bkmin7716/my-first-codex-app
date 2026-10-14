@@ -177,7 +177,7 @@ test("익명 로그인 실패를 RPC 성공으로 표시하지 않음", async ()
   const f = fixture();
   f.client.auth.signInAnonymously = async () => ({ error: {message:"disabled"} });
   const api = new SharedGames(f.client);
-  await assert.rejects(() => api.create(createRound("hussein"), "이름"), /익명 로그인 실패/);
+  await assert.rejects(() => api.create(createRound("hussein"), "이름"), /auth.signInAnonymously: disabled/);
   assert.equal(api.checks.auth, "실패");
   assert.equal(api.checks.rpc, "미확인");
   assert.equal(f.calls.length, 0);
@@ -203,8 +203,38 @@ test("로컬 세션만으로 로그인 성공을 표시하지 않음", async () 
   f.client.auth.getSession = async () => ({data:{session:{user:{id:"owner"}}}});
   f.client.auth.getUser = async () => ({error:{message:"expired"}});
   const api = new SharedGames(f.client);
-  await assert.rejects(() => api.list(), /서버 확인 실패/);
+  await assert.rejects(() => api.list(), /auth.getUser: expired/);
   assert.equal(api.checks.auth, "실패");
   assert.equal(api.checks.query, "미확인");
   assert.equal(api.checks.rpc, "미확인");
 });
+
+ test("요청별 오류 코드·HTTP·상세 보존 및 같은 요청 성공 시 오류 해제", async () => {
+  const f = fixture(), api = new SharedGames(f.client);
+  f.client.rpc = async () => ({error:{code:"42501",message:"permission denied",details:"policy",hint:"check role"},status:403});
+  await assert.rejects(() => api.join("ABC", "민수"), /rpc.golf_join: permission denied/);
+  const entry = api.diagnostics.get("rpc.golf_join");
+  assert.equal(entry.error.code, "42501"); assert.equal(entry.error.status, "403");
+  assert.equal(entry.error.details, "policy"); assert.equal(entry.error.hint, "check role");
+  assert.equal(api.diagnostics.get("auth.getUser").state, "성공");
+  f.client.rpc = async () => ({data:f.row});
+  try { await api.join("ABC", "민수"); assert.equal(api.diagnostics.get("rpc.golf_join").error, null); } finally { api.stop(); }
+ });
+ test("이력 조회만 실패해도 게임·참여자 보존, 재조회 성공은 RPC 실패를 지우지 않음", async () => {
+  const f = fixture(), original = f.client.from, api = new SharedGames(f.client);
+  try {
+    await api.open("game");
+    f.client.from = table => table === "golf_audit" ? {select(){return this},eq(){return this},order(){return this},limit(){return Promise.resolve({error:{code:"42501",message:"audit denied"}})}} : original(table);
+    await api.refresh();
+    assert.equal(api.game.id, "game");
+    assert.equal(api.diagnostics.get("golf_members.refresh").state, "성공");
+    assert.equal(api.diagnostics.get("golf_audit.refresh").state, "실패");
+    f.client.from = original;
+    await api.refresh();
+    assert.equal(api.diagnostics.get("golf_audit.refresh").error, null);
+    f.client.rpc = async () => ({error:{message:"conflict",code:"40001"}});
+    await assert.rejects(() => api.mutate("score", {}), /conflict/);
+    assert.equal(api.diagnostics.get("rpc.golf_mutate").state, "실패");
+    assert.equal(api.diagnostics.get("golf_games.refresh").state, "성공");
+  } finally { api.stop(); }
+ });

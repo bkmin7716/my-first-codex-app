@@ -1,11 +1,15 @@
 import { validateRound } from "./engine.js";
 import { sharedConfig } from "./shared-config.js";
 
+export function diagnosticText(value) {
+  return String(value ?? "").replace(/sb_(?:secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|Bearer\s+\S+/gi, "[비공개]").slice(0, 1500);
+}
+
 export class SharedGames {
   constructor(client, onUpdate = () => {}, onStatus = () => {}) {
     this.client = client;
     this.onUpdate = onUpdate;
-    this.onStatus = onStatus;
+    this.onStatus = value => { this.status = value; onStatus(value); };
     this.game = null;
     this.members = [];
     this.audit = [];
@@ -15,26 +19,52 @@ export class SharedGames {
     this.busy = false;
     this.reading = false;
     this.realtime = false;
+    this.diagnostics = new Map();
+    this.requestId = 0;
     this.checks = { auth: "미확인", query: "미확인", rpc: "미확인" };
+  }
+  async request(operation, group, fn, validate = () => {}) {
+    const entry = { operation, group, id: ++this.requestId, state: "확인 중", time: new Date().toISOString() };
+    this.diagnostics.set(operation, entry);
+    this.checks[group] = "확인 중";
+    this.onStatus(this.status || "요청 확인 중");
+    try {
+      const result = await fn();
+      if (result.error) throw Object.assign(new Error(result.error.message), result.error, { status: result.status || result.error.status });
+      validate(result.data);
+      entry.state = "성공";
+      entry.error = null;
+      return result;
+    } catch (cause) {
+      entry.state = "실패";
+      entry.error = {
+        code: diagnosticText(cause.code || cause.name || "UNKNOWN"),
+        message: diagnosticText(cause.message || cause),
+        status: diagnosticText(cause.status || ""),
+        details: diagnosticText(cause.details), hint: diagnosticText(cause.hint),
+      };
+      throw Object.assign(new Error(`${operation}: ${entry.error.message}`), { ...entry.error, operation, message: `${operation}: ${entry.error.message}` });
+    } finally {
+      entry.time = new Date().toISOString();
+      const entries = [...this.diagnostics.values()].filter(e => e.group === group);
+      if (this.diagnostics.get(operation) === entry) this.checks[group] = entries.some(e => e.state === "실패") ? "실패" : entries.some(e => e.state === "확인 중") ? "확인 중" : group === "rpc" ? "실행 확인됨" : "확인됨";
+      if (this.diagnostics.get(operation) === entry) this.onStatus(this.status || "요청 결과 확인됨");
+    }
   }
   async identity() {
     this.checks.auth = "확인 중";
     this.onStatus("익명 로그인 확인 중");
-    const { data, error } = await this.client.auth.getSession();
-    if (error) { this.checks.auth = "실패"; throw Error("익명 로그인 세션 조회 실패"); }
+    const { data } = await this.request("auth.getSession", "auth", () => this.client.auth.getSession());
     let session = data.session;
     if (!session) {
-      const result = await this.client.auth.signInAnonymously();
-      if (result.error) { this.checks.auth = "실패"; throw Error("익명 로그인 실패 · Supabase에서 익명 로그인을 허용했는지 확인하세요."); }
+      const result = await this.request("auth.signInAnonymously", "auth", () => this.client.auth.signInAnonymously());
       session = result.data.session;
     }
     if (!session?.user?.id) { this.checks.auth = "실패"; throw Error("익명 로그인 세션을 확인할 수 없습니다."); }
     // getSession may only read local storage; verify the identity with Auth.
-    const verified = await this.client.auth.getUser();
-    if (verified.error || verified.data?.user?.id !== session.user.id) {
-      this.checks.auth = "실패";
-      throw Error("익명 로그인 서버 확인 실패");
-    }
+    const verified = await this.request("auth.getUser", "auth", () => this.client.auth.getUser(), data => {
+      if (data?.user?.id !== session.user.id) throw Error("익명 로그인 서버 확인 실패");
+    });
     this.checks.auth = "확인됨";
     this.userId = verified.data.user.id;
     this.onStatus("로그인 확인됨 · 서버 요청 대기");
@@ -42,8 +72,11 @@ export class SharedGames {
   }
   async rpc(name, args) {
     this.checks.rpc = "확인 중";
-    const { data, error } = await this.client.rpc(name, args);
-    if (error) { this.checks.rpc = "요청 실패"; throw Error(error.message); }
+    const { data } = await this.request(`rpc.${name}`, "rpc", () => this.client.rpc(name, args), data => {
+      const game = Array.isArray(data) && data.length === 1 ? data[0] : data;
+      if (!game?.id) throw Error("서버의 게임 응답을 확인할 수 없습니다.");
+      validateRound(game.round);
+    });
     // PostgREST can encode composite-returning RPCs as a one-row array.
     const game = Array.isArray(data)
       ? data.length === 1
@@ -52,7 +85,7 @@ export class SharedGames {
       : data;
     if (!game?.id) { this.checks.rpc = "응답 오류"; throw Error("서버의 게임 응답을 확인할 수 없습니다."); }
     validateRound(game.round);
-    this.checks.rpc = "실행 확인됨";
+
     this.onStatus("로그인·RPC 실행 확인됨 · 게임 동기화 확인 중");
     return game;
   }
@@ -73,23 +106,21 @@ export class SharedGames {
   }
   async list() {
     await this.identity();
-    const { data, error } = await this.client
+    const { data } = await this.request("golf_games.list", "query", () => this.client
       .from("golf_games")
       .select("*")
-      .order("updated_at", { ascending: false });
-    if (error) { this.checks.query = "실패"; throw Error(error.message); }
-    this.checks.query = "확인됨";
+      .order("updated_at", { ascending: false }));
+
     this.onStatus("로그인·서버 조회 확인됨 · RPC 실행은 게임 생성/참여 시 확인");
     return data;
   }
   async open(id) {
     await this.identity();
-    const { data, error } = await this.client
+    const { data } = await this.request("golf_games.open", "query", () => this.client
       .from("golf_games")
       .select("*")
       .eq("id", id)
-      .single();
-    if (error) throw Error(error.message);
+      .single());
     return this.watch(data);
   }
   accept(game) {
@@ -140,29 +171,19 @@ export class SharedGames {
     const generation = this.generation,
       id = this.game.id;
     try {
-      const [g, m, a] = await Promise.all([
-        this.client.from("golf_games").select("*").eq("id", id).single(),
-        this.client
-          .from("golf_members")
-          .select("*")
-          .eq("game_id", id)
-          .order("joined_at"),
-        this.client
-          .from("golf_audit")
-          .select("*")
-          .eq("game_id", id)
-          .order("id", { ascending: false })
-          .limit(100),
+      const results = await Promise.allSettled([
+        this.request("golf_games.refresh", "query", () => this.client.from("golf_games").select("*").eq("id", id).single(), data => validateRound(data.round)),
+        this.request("golf_members.refresh", "query", () => this.client.from("golf_members").select("*").eq("game_id", id).order("joined_at")),
+        this.request("golf_audit.refresh", "query", () => this.client.from("golf_audit").select("*").eq("game_id", id).order("id", { ascending: false }).limit(100)),
       ]);
       if (generation !== this.generation) return;
-      for (const result of [g, m, a])
-        if (result.error) throw Error(result.error.message);
-      this.accept(g.data);
-      this.members = m.data;
-      this.audit = a.data;
-      this.checks.query = "확인됨";
-      this.onStatus(this.realtime ? "실시간 연결됨 · 서버 조회 확인됨" : "서버 조회 확인됨 · 실시간 연결 확인 중 · 5초마다 갱신");
+      const [g, m, a] = results;
+      if (g.status === "fulfilled") this.accept(g.value.data);
+      if (m.status === "fulfilled") this.members = m.value.data;
+      if (a.status === "fulfilled") this.audit = a.value.data;
       this.onUpdate(this);
+      if (results.some(r => r.status === "rejected")) throw Error("일부 서버 조회 실패");
+      this.onStatus(this.realtime ? "실시간 연결됨 · 서버 조회 확인됨" : "서버 조회 확인됨 · 실시간 연결 확인 중 · 5초마다 갱신");
     } catch (error) {
       if (generation === this.generation) this.checks.query = "실패";
       if (generation === this.generation)
@@ -197,6 +218,8 @@ export class SharedGames {
   }
   stop() {
     this.generation++;
+    for (const [key, entry] of this.diagnostics) if (entry.group === "query") this.diagnostics.delete(key);
+    this.checks.query = "미확인";
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     if (this.channel) this.client.removeChannel(this.channel);
