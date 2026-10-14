@@ -20,6 +20,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npm run test:browser
+      - name: iPhone Safari engine regression tests
+        run: npm run test:browser
+        env:
+          BROWSER: webkit
       - name: Build public Pages assets
         run: npm run build:pages
         env:

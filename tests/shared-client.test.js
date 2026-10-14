@@ -238,3 +238,14 @@ test("로컬 세션만으로 로그인 성공을 표시하지 않음", async () 
     assert.equal(api.diagnostics.get("golf_games.refresh").state, "성공");
   } finally { api.stop(); }
  });
+
+
+test("persisted anonymous identity is reused and mismatched verified identity is rejected", async () => {
+ const f = fixture(), api = new SharedGames(f.client);
+ f.client.auth.getSession = async () => ({data:{session:{user:{id:"owner"}}}});
+ f.client.auth.signInAnonymously = async () => { throw Error("must reuse session"); };
+ assert.equal(await api.identity(), "owner");
+ f.client.auth.getUser = async () => ({data:{user:{id:"other-device"}}});
+ await assert.rejects(()=>api.identity(), /익명 로그인 서버 확인 실패/);
+ assert.equal(api.checks.auth,"실패");
+});

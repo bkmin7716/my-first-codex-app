@@ -38,6 +38,9 @@ const money = (v) => `${v.toLocaleString("ko-KR")} VND`;
 const sum = (a) => a.reduce((s, v) => s + v, 0);
 const disabled = (v) => (v ? "disabled" : "");
 const nameDrafts = new Map();
+// A selection is a local draft, never inferred from a refreshed server row.
+const slotDrafts = new Map();
+const slotDraftKey = () => `${api.game.id}:${api.userId}`;
 const actions = {
   score: "타수 변경",
   near: "Near 변경",
@@ -100,7 +103,13 @@ function lobby() {
 }
 function roster(g, r, owner) {
  const me = api.members.find(m => m.user_id === api.userId);
- return `<div class="card"><h3>선수 슬롯 · 초기 순위</h3><p>슬롯은 점수·지급 기록의 고정 연결입니다. 미참가 슬롯은 참가 후 이름이 확정됩니다.</p>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${api.members.some(m=>m.slot===i)?"✓ 확정":"· 미참가 / 연결 미확정"}</p>`).join("")}<label for="shared-my-name">내 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(nameDrafts.get(g.id) ?? me?.name)}"><button data-shared="rename">이름 저장</button>${me && me.slot == null ? `<label for="shared-slot">기존 점수·정산이 본인 것인 슬롯을 선택하세요 (연결 후 변경 불가)</label><select id="shared-slot">${r.players.map((name,i)=>api.members.some(m=>m.slot===i)?"":`<option value="${i}">슬롯 ${i+1} · ${esc(name)}</option>`).join("")}</select><button data-shared="claim">내 선수 슬롯 연결</button>`:""}${r.mode==='hussein'?r.initial.map((slot,rank)=>`<label for="shared-initial-${rank}">${rank+1}등</label><select id="shared-initial-${rank}" data-initial="${rank}" ${disabled(!owner || busy || g.finalized || g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>슬롯 ${i+1} · ${esc(name)}${api.members.some(m=>m.slot===i)?"":" (미참가 / 미확정)"}</option>`).join("")}</select>`).join(""):""}</div>`;
+ const available = r.players.map((_, i) => i).filter(i => !api.members.some(m => m.slot === i));
+ const key = slotDraftKey();
+ if (!slotDrafts.has(key) && available.length) slotDrafts.set(key, String(available[0]));
+ const selected = slotDrafts.get(key);
+ const validSelection = available.some(i => String(i) === selected);
+ if (me?.slot != null) slotDrafts.delete(key);
+ return `<div class="card"><h3>선수 슬롯 · 초기 순위</h3><p>슬롯은 점수·지급 기록의 고정 연결입니다. 미참가 슬롯은 참가 후 이름이 확정됩니다.</p>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${api.members.some(m=>m.slot===i)?"✓ 확정":"· 미참가 / 연결 미확정"}</p>`).join("")}<label for="shared-my-name">내 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(nameDrafts.get(g.id) ?? me?.name)}"><button data-shared="rename">이름 저장</button><p class="muted">이름 저장은 내 표시 이름을 저장합니다. 슬롯 연결 전에는 선수 이름이 바뀌지 않습니다. 슬롯을 연결하면 저장된 표시 이름이 해당 선수에 반영됩니다.</p>${me && me.slot == null ? `<label for="shared-slot">기존 점수·정산이 본인 것인 슬롯을 선택하세요 (연결 후 변경 불가)</label><select id="shared-slot">${validSelection ? "" : `<option value="" selected>선택한 슬롯이 연결되었습니다. 다른 슬롯을 선택하세요.</option>`}${r.players.map((name,i)=>api.members.some(m=>m.slot===i)?"":`<option value="${i}" ${selected === String(i) ? "selected" : ""}>슬롯 ${i+1} · ${esc(name)}</option>`).join("")}</select><button data-shared="claim" ${disabled(!validSelection || busy || g.finalized)}>내 선수 슬롯 연결</button>`:""}${r.mode==='hussein'?r.initial.map((slot,rank)=>`<label for="shared-initial-${rank}">${rank+1}등</label><select id="shared-initial-${rank}" data-initial="${rank}" ${disabled(!owner || busy || g.finalized || g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>슬롯 ${i+1} · ${esc(name)}${api.members.some(m=>m.slot===i)?"":" (미참가 / 미확정)"}</option>`).join("")}</select>`).join(""):""}</div>`;
 }
 function holeWon(x,j){return x.winner==='A'?x.hussein===j:x.winner==='B'?x.allies?.includes(j):false;}
 function holeRole(x,j,first){
@@ -163,21 +172,23 @@ localRoot.addEventListener("click", (e) => {
   panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-name")?.focus();
 });
 panel.addEventListener("input", (e) => {
+  if (e.target.id === "shared-slot" && api?.game) slotDrafts.set(slotDraftKey(), e.target.value);
   if (e.target.id === "shared-my-name" && api?.game) nameDrafts.set(api.game.id,e.target.value);
   if (e.target.id === "shared-name") draftName = e.target.value;
   if (e.target.id === "shared-code") draftCode = e.target.value;
   if (e.target.id === "shared-source") selectedSource = e.target.value;
 });
 panel.addEventListener("focusin", (e) => {
-  if (e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,[data-initial]")) {
+  if (e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,#shared-slot,[data-initial]")) {
     editing = true;
     editRevision = api?.game?.revision;
   }
 });
 panel.addEventListener("focusout", (e) => {
+  if (!e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,#shared-slot,[data-initial]")) return;
   editing = false;
   // Do not replace the save button between WebKit mousedown and click.
-  if (e.target.id === "shared-my-name") return;
+  if (e.target.id === "shared-my-name" || e.target.id === "shared-slot") { editRevision = null; return; }
   setTimeout(() => {
     if (!busy && !editing && api?.game) render();
   }, 0);
@@ -213,6 +224,12 @@ panel.addEventListener("change", (e) => {
     [initial[rank],initial[other]]=[initial[other],initial[rank]]; draftInitial=initial; render();
   }
   if (!api?.game) return;
+  if (el.id === "shared-slot") {
+    slotDrafts.set(slotDraftKey(), el.value);
+    const claim = panel.querySelector('[data-shared="claim"]');
+    if (claim) claim.disabled = busy || api.game.finalized || !/^[0-3]$/.test(el.value) || api.members.some(m => m.slot === Number(el.value));
+    return;
+  }
   const revision = editRevision ?? api.game.revision;
   editRevision = null;
   if (el.dataset.sharedScore !== undefined) {
@@ -280,6 +297,8 @@ panel.addEventListener("click", (e) => {
     render();
     return;
   }
+  // Capture before disabling controls or opening the native Safari dialog.
+  const selectedSlot = act === "claim" ? panel.querySelector("#shared-slot")?.value : null;
   run(async () => {
     if (act === "check") {
       const c = await connection();
@@ -319,7 +338,14 @@ panel.addEventListener("click", (e) => {
       page = "score";
     }
     if (act === "rename") { await mutate("name", {value:(nameDrafts.get(api.game.id) ?? panel.querySelector("#shared-my-name").value).trim()}); nameDrafts.delete(api.game.id); }
-    if (act === "claim" && confirm("선택한 슬롯의 기존 점수·지급·정산 기록이 본인 기록인지 확인하세요. 연결 후 슬롯을 변경할 수 없습니다.")) await mutate("slot", {value:+panel.querySelector("#shared-slot").value});
+    if (act === "claim") {
+      if (!/^[0-3]$/.test(selectedSlot ?? "") || api.members.some(m => m.slot === Number(selectedSlot)))
+        throw Error("연결할 수 있는 선수 슬롯을 다시 선택하세요.");
+      if (confirm("선택한 슬롯의 기존 점수·지급·정산 기록이 본인 기록인지 확인하세요. 연결 후 슬롯을 변경할 수 없습니다.")) {
+        await mutate("slot", {value:Number(selectedSlot)});
+        slotDrafts.delete(slotDraftKey());
+      }
+    }
     if (act === "invite") {
       const url = new URL(location.href);
       url.hash = `join=${api.game.code}`;

@@ -300,3 +300,30 @@ test("fixed slots, initial permutation, partial roster lock and rename preserve 
  g=await rpc(0,"golf_mutate",[g.id,g.revision,"initial",{value:[0,1,2,3]}]);
  assert.equal(calculate(g.round).holes[0].rank[1],1);
 });
+
+
+test("unlinked name save, explicit slot claim, duplicate rejection preserve other slots and records", async () => {
+ const r = createRound("hussein");
+ r.players = ["슬롯 1", "미참가 슬롯 2", "미참가 슬롯 3", "미참가 슬롯 4"];
+ r.initial = [3,1,0,2]; r.holes[0].scores = [3,4,5,6];
+ r.holes[0].paid = [100,200,300,400]; r.settled = [10,20,30,40];
+ r.cash = [{type:"collect",amount:1000}];
+ let g = await rpc(0,"golf_create",[r,"생성자"]);
+ g = await rpc(0,"golf_mutate",[g.id,g.revision,"slot",{value:0}]);
+ g = await rpc(1,"golf_join",[g.code,"참가자"]);
+ g = await rpc(2,"golf_join",[g.code,"다른 참가자"]);
+ const original = structuredClone(g.round);
+ g = await rpc(1,"golf_mutate",[g.id,g.revision,"name",{value:"민수"}]);
+ assert.deepEqual(g.round, original);
+ const revision = g.revision;
+ g = await rpc(1,"golf_mutate",[g.id,revision,"slot",{value:1}]);
+ await assert.rejects(()=>rpc(2,"golf_mutate",[g.id,revision,"slot",{value:1}]), /다른 참가자/);
+ await assert.rejects(()=>rpc(2,"golf_mutate",[g.id,g.revision,"slot",{value:1}]), /이미 연결/);
+ const expected = structuredClone(original); expected.players[1] = "민수";
+ assert.deepEqual(g.round, expected);
+ const members = (await as(0,"select user_id,name,slot from public.golf_members where game_id=$1",[g.id])).rows;
+ assert.equal(members.find(m=>m.user_id===users[0]).slot,0);
+ assert.equal(members.find(m=>m.user_id===users[1]).slot,1);
+ assert.equal(members.find(m=>m.user_id===users[2]).slot,null);
+ await assert.rejects(()=>rpc(1,"golf_mutate",[g.id,g.revision,"slot",{value:2}]), /변경할 수 없습니다/);
+});
