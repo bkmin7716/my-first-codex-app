@@ -342,7 +342,7 @@ panel.addEventListener("click", (e) => {
       if (!/^[0-3]$/.test(selectedSlot ?? "") || api.members.some(m => m.slot === Number(selectedSlot)))
         throw Error("연결할 수 있는 선수 슬롯을 다시 선택하세요.");
       if (confirm("선택한 슬롯의 기존 점수·지급·정산 기록이 본인 기록인지 확인하세요. 연결 후 슬롯을 변경할 수 없습니다.")) {
-        await mutate("slot", {value:Number(selectedSlot)});
+        await api.claimSlot(Number(selectedSlot));
         slotDrafts.delete(slotDraftKey());
       }
     }

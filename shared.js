@@ -194,6 +194,15 @@ export class SharedGames {
       this.reading = false;
     }
   }
+  async claimSlot(slot) {
+    const me = this.members.find(m => m.user_id === this.userId);
+    if (!me) throw Error("참가자만 슬롯을 연결할 수 있습니다.");
+    if (me.slot != null) throw Error("선수 슬롯은 변경할 수 없습니다.");
+    if (!Number.isInteger(slot) || slot < 0 || slot > 3) throw Error("선수 번호 오류");
+    if (this.members.some(m => m.slot === slot)) throw Error("이미 연결된 선수 슬롯입니다.");
+    if (this.game?.finalized) throw Error("최종 확정 잠금 상태입니다.");
+    return this.mutate("slot", { value: slot });
+  }
   async mutate(action, detail, revision = this.game?.revision) {
     if (this.busy) throw Error("이전 변경을 저장 중입니다.");
     if (!this.game) throw Error("먼저 공동 게임을 여세요.");

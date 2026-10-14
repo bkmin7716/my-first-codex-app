@@ -249,3 +249,16 @@ test("persisted anonymous identity is reused and mismatched verified identity is
  await assert.rejects(()=>api.identity(), /익명 로그인 서버 확인 실패/);
  assert.equal(api.checks.auth,"실패");
 });
+
+test("슬롯 연결은 지원 RPC payload를 사용하고 재연결·점유 슬롯을 차단", async () => {
+  const f = fixture(), api = new SharedGames(f.client);
+  api.game = f.row; api.userId = "owner";
+  api.members = [{user_id:"owner",slot:0}];
+  await assert.rejects(() => api.claimSlot(1), /변경할 수 없습니다/);
+  api.members = [{user_id:"owner",slot:null},{user_id:"other",slot:1}];
+  await assert.rejects(() => api.claimSlot(1), /이미 연결/);
+  await assert.rejects(() => api.claimSlot(NaN), /선수 번호/);
+  assert.equal(f.calls.length, 0);
+  await api.claimSlot(2);
+  assert.deepEqual(f.calls[0], {name:"golf_mutate",args:{p_game:"game",p_revision:0,p_action:"slot",p_detail:{value:2}}});
+});
