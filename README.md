@@ -47,12 +47,12 @@ JSON 백업을 정기적으로 내려받으세요. 복원은 검증 및 확인 �
 - 누구나 입력 완료 홀을 잠그고 생성자만 해제합니다. 18홀 잠금 후 생성자가 최종 정산을 확정하면 전체 데이터가 잠깁니다. 서버에서도 권한을 강제합니다.
 - 단가·지급·수금·환급 기록은 생성자만 변경합니다. 동시 변경 충돌은 오래된 revision의 저장을 거부하여 덮어쓰기를 막습니다.
 - 공동 기능은 Supabase 프로젝트와 공개 연결 설정, 인터넷이 필요합니다. 설정하지 않았을 때 임시 공동 게임으로 대체하지 않습니다.
-- `shared-config.js`에는 공개 URL·publishable/anon 키만 넣습니다. `supabase/schema.sql`을 새 Supabase 프로젝트에 한 번 설치합니다. 자세한 한국어 절차와 익명 세션 유지·운영 제약은 설정 문서를 참고하세요.
-- GitHub Pages는 Actions의 **골프 앱 Pages 배포**를 수동 실행합니다. PR에는 별도 자동 테스트 워크플로가 적용됩니다.
+- Actions가 Repository Secrets의 `SUPABASE_URL`·`SUPABASE_PUBLISHABLE_KEY`로 배포용 `shared-config.js`를 생성합니다. `sb_publishable_` 키만 허용하며 secret·JWT 키는 배포를 중단합니다. `supabase/schema.sql`을 새 Supabase 프로젝트에 한 번 설치합니다. 자세한 한국어 절차와 익명 세션 유지·운영 제약은 설정 문서를 참고하세요.
+- GitHub Pages는 main 병합/푸시 후 자동 배포되며 Actions의 **골프 앱 Pages 배포**에서 수동 재실행도 가능합니다. PR에는 별도 자동 테스트 워크플로가 적용됩니다.
 
 ## iPhone 설치 및 오프라인
 
-배포된 HTTPS 주소를 iPhone Safari에서 열고 **공유 → 홈 화면에 추가 → 추가**를 선택합니다. 처음에는 온라인으로 자산 캐시를 완료해야 합니다. 이후 홈 화면 앱에서 오프라인 사용 가능합니다. Safari 저장 데이터/캐시 삭제, 저장 공간 부족, 브라우저 정책은 저장 및 오프라인 기능에 영향을 줄 수 있습니다. 서비스 워커 자산 변경 시 `sw.js`의 캐시 버전도 갱신하세요.
+배포된 HTTPS 주소를 iPhone Safari에서 열고 **공유 → 홈 화면에 추가 → 추가**를 선택합니다. 처음에는 온라인으로 자산 캐시를 완료해야 합니다. 이후 홈 화면 앱에서 오프라인 사용 가능합니다. Safari 저장 데이터/캐시 삭제, 저장 공간 부족, 브라우저 정책은 저장 및 오프라인 기능에 영향을 줄 수 있습니다. Pages 빌드가 실행 번호별로 서비스 워커 캐시 버전을 자동 갱신합니다. 업데이트 후 앱을 닫고 다시 여세요.
 
 ## 파일 구성
 
@@ -61,12 +61,12 @@ JSON 백업을 정기적으로 내려받으세요. 복원은 검증 및 확인 �
 - `app.js`, `index.html`, `style.css`: 한국어 반응형 화면과 상호작용
 - `manifest.webmanifest`, `sw.js`, `icon-*.png`: 설치 및 오프라인
 - `tests/engine.test.js`, `tests/ui.test.js`: 자동 검증
-- `.github/workflows/pages.yml`: 수동 Pages 배포
+- `.github/workflows/pages.yml`: Secrets 설정 주입 및 자동 Pages 배포
 
 ## 검증
 
 - `npm test`: 기존 계산·저장·화면 35개, 공동 클라이언트 4개, PostgreSQL 권한·잠금·충돌·감사·재계산 11개 시나리오를 검사합니다.
-- `npm run test:browser`: 서로 격리된 모바일 Chromium 컨텍스트 5개와 PGlite DB로 생성·참여·정원·입력·동기화 이벤트·Near·잠금·이력·오프라인·재접속 목록·로컬 원본 보존을 검사합니다. `npx playwright install chromium`이 필요합니다.
+- `npm run test:browser`: 서로 격리된 모바일 Chromium 컨텍스트 5개 (PR CI는 WebKit도 실행)와 PGlite DB로 생성·참여·정원·입력·동기화 이벤트·Near·잠금·이력·오프라인·재접속 목록·로컬 원본 보존을 검사합니다. `npx playwright install chromium`이 필요합니다.
 - DB 테스트는 실제 PostgreSQL 엔진인 PGlite에서 RLS·RPC를 실행합니다. 브라우저 테스트의 인증과 이벤트 전송은 테스트 전용 어댑터입니다. 제품 코드에는 이 어댑터가 포함되지 않습니다.
 - 실제 Supabase 프로젝트의 Auth·Realtime 설정 및 실제 iPhone 4대 동작은 사용자의 서비스 설정 후 별도 확인이 필요합니다. 검증 절차는 SHARED_SETUP.md에 있습니다.
 

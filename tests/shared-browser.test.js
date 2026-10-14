@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, extname } from "node:path";
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
 import { PGlite } from "@electric-sql/pglite";
 import { createRound } from "../engine.js";
 const db = new PGlite();
@@ -62,6 +62,7 @@ async function request(body) {
   const rows = (await db.query(sql, args)).rows;
   return body.single ? rows[0] : rows;
 }
+const basePath = "/my-first-codex-app";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
@@ -88,6 +89,8 @@ const server = createServer(async (req, res) => {
     }
     return;
   }
+  if (!url.pathname.startsWith(basePath + "/")) { res.writeHead(404).end(); return; }
+  url.pathname = url.pathname.slice(basePath.length);
   if (url.pathname === "/shared-config.js") {
     res.setHeader("Content-Type", "application/javascript");
     res.end(
@@ -126,12 +129,13 @@ const sdk = `export function createClient(){
  rpc:(rpc,args)=>call({rpc,args}),from(table){let body={table};const q={select(){return q},eq(k,v){body.filter=[k,v];return q},order(field,o={}){body.order={field,...o};return q},limit(n){body.limit=n;return q},single(){body.single=true;return q},then(a,b){return call(body).then(a,b)}};return q},
  channel(){let cb,es;const c={on(e,f,fn){cb=fn;return c},subscribe(fn){es=new EventSource('/__events');es.onmessage=()=>cb();es.onopen=()=>fn('SUBSCRIBED');return c},close(){es?.close()}};return c},removeChannel(c){c.close()}}}
 `;
-const browser = await chromium.launch({
+const browserType = process.env.BROWSER === "webkit" ? webkit : chromium;
+const browser = await browserType.launch({
   headless: true,
   executablePath:
-    process.env.CHROMIUM_PATH ||
+    browserType === webkit ? undefined : process.env.CHROMIUM_PATH ||
     (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined),
-  args: ["--no-sandbox"],
+  args: browserType === chromium ? ["--no-sandbox"] : [],
 });
 const contexts = [],
   pages = [],
@@ -164,7 +168,7 @@ try {
     const p = await context.newPage();
     p.on("pageerror", (e) => errors.push(e.message));
     pages.push(p);
-    await p.goto(origin);
+    await p.goto(origin + basePath + "/");
     await p.locator("#shared-launch").click();
     await p.locator("#shared-name").fill(i === 0 ? "생성자" : `참가자${i}`);
   }

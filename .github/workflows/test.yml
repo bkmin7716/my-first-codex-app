@@ -15,5 +15,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm run test:browser
+      - name: Mobile WebKit shared play on Pages project path
+        run: npm run test:browser
+        env:
+          BROWSER: webkit
