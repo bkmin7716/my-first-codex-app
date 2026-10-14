@@ -20,6 +20,7 @@ function fixture() {
       async getSession() {
         return { data: { session: null } };
       },
+      async getUser() { return {data:{user:{id:"owner"}}}; },
       async signInAnonymously() {
         return { data: { session: { user: { id: "owner" } } } };
       },
@@ -170,4 +171,40 @@ test("공동 클라이언트: PostgREST의 단일 행 배열 응답 지원", asy
   } finally {
     api.stop();
   }
+});
+
+test("익명 로그인 실패를 RPC 성공으로 표시하지 않음", async () => {
+  const f = fixture();
+  f.client.auth.signInAnonymously = async () => ({ error: {message:"disabled"} });
+  const api = new SharedGames(f.client);
+  await assert.rejects(() => api.create(createRound("hussein"), "이름"), /익명 로그인 실패/);
+  assert.equal(api.checks.auth, "실패");
+  assert.equal(api.checks.rpc, "미확인");
+  assert.equal(f.calls.length, 0);
+});
+test("조회 실패 후 복구 상태와 RPC 확인 결과를 구분", async () => {
+  const f = fixture(), statuses = [], api = new SharedGames(f.client, () => {}, s => statuses.push(s));
+  try {
+    await api.open("game");
+    assert.equal(api.checks.query, "확인됨");
+    assert.equal(api.checks.rpc, "미확인");
+    f.setFail(true);
+    await api.refresh();
+    assert.equal(api.checks.query, "실패");
+    f.setFail(false);
+    await api.refresh();
+    assert.equal(api.checks.query, "확인됨");
+    assert.match(statuses.at(-1), /서버 조회 확인됨/);
+  } finally { api.stop(); }
+});
+
+test("로컬 세션만으로 로그인 성공을 표시하지 않음", async () => {
+  const f = fixture();
+  f.client.auth.getSession = async () => ({data:{session:{user:{id:"owner"}}}});
+  f.client.auth.getUser = async () => ({error:{message:"expired"}});
+  const api = new SharedGames(f.client);
+  await assert.rejects(() => api.list(), /서버 확인 실패/);
+  assert.equal(api.checks.auth, "실패");
+  assert.equal(api.checks.query, "미확인");
+  assert.equal(api.checks.rpc, "미확인");
 });

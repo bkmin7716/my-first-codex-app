@@ -6,7 +6,7 @@ export async function buildPages({ env = process.env, output = 'site' } = {}) {
   const url = (env.SUPABASE_URL || '').trim();
   const publishableKey = (env.SUPABASE_PUBLISHABLE_KEY || '').trim();
   if (!/^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/i.test(url))
-    throw new Error('SUPABASE_URL must be an HTTPS Supabase project URL.');
+    throw new Error('SUPABASE_URL must be an HTTPS Supabase project URL. Use Project Settings > Data API > Project URL (https://PROJECT_REF.supabase.co); do not use a dashboard URL, quotes, or placeholder text.');
   // Strict allowlist: reject secret keys and all JWTs (including service_role).
   if (!/^sb_publishable_[A-Za-z0-9_-]+$/.test(publishableKey))
     throw new Error('SUPABASE_PUBLISHABLE_KEY must be an sb_publishable_ key. Secret and JWT keys are forbidden.');
