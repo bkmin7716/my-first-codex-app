@@ -66,6 +66,13 @@ const basePath = "/my-first-codex-app";
 const root = resolve(new URL("..", import.meta.url).pathname);
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
+  // Serve the test transport over HTTP: browser routing cannot reliably
+  // intercept module fetches owned by an active worker (notably WebKit).
+  if (url.pathname === "/__sdk.js") {
+    res.setHeader("Content-Type", "application/javascript");
+    res.end(sdk);
+    return;
+  }
   if (url.pathname === "/__events") {
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
@@ -116,7 +123,11 @@ const server = createServer(async (req, res) => {
         ".webmanifest": "application/manifest+json",
       }[extname(file)] || "application/octet-stream",
     );
-    res.end(readFileSync(file));
+    const source = readFileSync(file);
+    res.end(url.pathname === "/shared.js" ? source.toString().replace(
+      "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/+esm",
+      "/__sdk.js",
+    ) : source);
   } catch {
     res.writeHead(404).end();
   }
@@ -174,13 +185,6 @@ try {
     await context.addInitScript((i) => {
       window.__testUser = i;
     }, i);
-    await context.route("https://cdn.jsdelivr.net/**", (route) =>
-      route.fulfill({
-        contentType: "application/javascript",
-        headers: { "access-control-allow-origin": "*" },
-        body: sdk,
-      }),
-    );
     const p = await context.newPage();
     p.on("pageerror", (e) => errors.push(e.message));
     pages.push(p);
@@ -299,7 +303,7 @@ try {
       configuration === "missing" ? "export const sharedConfig={url:'',publishableKey:''}" :
       configuration === "invalid" ? "export const sharedConfig={url:'https://supabase.com/dashboard/project/test',publishableKey:'test-public'}" :
       "export const sharedConfig={url:'https://test.supabase.co',publishableKey:'test-public'}"}));
-    await context.route("https://cdn.jsdelivr.net/**", route => route.fulfill({contentType:"application/javascript",headers:{"access-control-allow-origin":"*"},body:
+    await context.route("**/__sdk.js", route => route.fulfill({contentType:"application/javascript",headers:{"access-control-allow-origin":"*"},body:
       "export function createClient(){return {auth:{async getSession(){return {data:{session:null}}},async signInAnonymously(){return {error:{message:'sb_secret_do-not-display'}}}}}}"}));
     const p = await context.newPage();
     p.on("pageerror", e => errors.push(e.message));
@@ -320,10 +324,6 @@ try {
   const pwaContext = await browser.newContext({viewport:{width:390,height:844},serviceWorkers:"allow"});
   contexts.push(pwaContext);
   await pwaContext.addInitScript(() => { window.__testUser = 3; });
-  await pwaContext.route("https://cdn.jsdelivr.net/**", route => route.fulfill({
-    contentType:"application/javascript",
-    headers:{"access-control-allow-origin":"*"}, body:sdk,
-  }));
   const pwa = await pwaContext.newPage();
   pwa.on("pageerror", e => errors.push(e.message));
   await pwa.goto(origin + basePath + "/");
@@ -389,6 +389,9 @@ try {
   await pwa.locator("#shared-name").fill("참가자3");
   await pwa.locator("#shared-code").fill(code);
   await pwa.locator('[data-shared="join"]').click();
+  await pwa.waitForFunction(() => document.querySelector("#shared-score-0") || document.querySelector('[role="alert"]'));
+  assert.equal(await pwa.getByRole("alert").count(), 0,
+    await pwa.locator(".shared-panel").innerText());
   await pwa.locator("#shared-score-0").fill("10");
   await pwa.locator("#shared-score-0").press("Tab");
   await waitSaved(pwa);
