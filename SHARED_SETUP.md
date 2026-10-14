@@ -96,3 +96,10 @@ PR #4의 `tests/shared-browser.test.js:329` 실패는 온라인 갱신을 통과
 Chromium의 `setOffline(true)` 새로고침 검사와 모든 엔진의 공동 저장 실패 검사도 유지합니다. 테스트 재시도, 오류 무시, WebKit 테스트 생략은 하지 않습니다. 서버 중단은 네트워크 요청 실패에 대한 캐시 복구 검사이며, 물리적인 iPhone 비행기 모드나 실제 Supabase Auth/Realtime 검증을 대신하지 않습니다. 앱 코드·SQL·계산 및 저장 형식은 이번 테스트 수정에서 변경하지 않습니다.
 
 서비스 워커가 켜진 복구 검사에서도 동일한 PostgreSQL 테스트 어댑터를 사용하도록 SDK 모듈은 테스트 HTTP 서버에서 직접 제공합니다. 테스트 서버에서만 `shared.js`의 SDK import 주소를 교체하며, 배포 파일의 Supabase SDK 주소는 바꾸지 않습니다. 워커가 처리하는 요청을 Playwright 라우팅으로 가로채는 방식에 의존하지 않습니다.
+
+## 공동 플레이 요청별 진단
+
+- **요청별 진단 결과**에서 `auth.getSession/getUser/signInAnonymously`, `rpc.golf_create/golf_join/golf_mutate`, `golf_games/golf_members/golf_audit` 조회의 최신 상태와 확인 시각을 각각 확인합니다. 실패에는 실제 오류 코드·메시지·HTTP 상태(응답에 있을 때)·details·hint가 표시됩니다. 키와 인증 토큰은 가립니다.
+- 같은 요청의 재시도가 성공하면 해당 경고가 해제됩니다. 서버 조회 성공은 실패한 저장 RPC를 성공으로 바꾸지 않습니다. 이력 조회만 실패해도 성공한 게임·참여자 조회는 화면에 반영하고 이전 기록은 보존합니다. 새로고침은 진단 상태를 새로 시작하며 서버 기록을 삭제하지 않습니다.
+- 초대 링크 `#join=...`로 참여한 뒤 `history.replaceState is not a function`이 발생하던 문제는 화면의 변경 이력 함수와 브라우저 history 객체의 이름 충돌 때문입니다. 게임 참여 RPC는 이미 성공했는데 URL 정리 오류가 일반 요청 실패로 표시되었습니다. 브라우저의 `window.history.replaceState`를 사용해 수정했습니다.
+- SQL 재설치·초기화나 사이트 데이터 삭제는 이 오류를 해결하는 절차가 아닙니다. 실제 휴대폰 오류가 계속되면 요청별 진단에 표시된 실패 항목·코드·메시지를 확인하세요. 표시 이름·참여 코드·키를 추가로 공개할 필요는 없습니다.
