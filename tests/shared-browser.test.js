@@ -246,10 +246,43 @@ try {
   await pages[4].getByRole("alert").filter({ hasText: "4명" }).waitFor();
   await waitSynced();
   assert.equal(await pages[0].locator('[data-shared="lock"]').isDisabled(), true);
+  await pages[1].locator("#shared-slot").selectOption("3");
+  await pages[1].locator("#shared-slot").evaluate(el => el.blur());
   for (let i=0;i<4;i++) {
-    await pages[i].locator("#shared-slot").selectOption(String(i));
+    if (i === 1) {
+      assert.equal(await pages[i].locator("#shared-slot").inputValue(), "");
+      assert.equal(await pages[i].locator('[data-shared="claim"]').isDisabled(), true);
+    }
+    const selected = String([3,1,2,0][i]);
+    await pages[i].locator("#shared-slot").selectOption(selected);
+    // Native select blur, tab navigation and a server/name refresh must keep
+    // a non-first selection, including when slot 1 is still available.
+    await pages[i].locator("#shared-slot").focus();
+    await pages[i].locator("#shared-slot").press("Tab");
+    await pages[i].locator('[data-page="summary"]').click();
+    assert.equal(await pages[i].locator("#shared-slot").inputValue(), selected);
+    await pages[i].locator('[data-page="score"]').click();
+    if (i === 1) {
+      await pages[i].waitForTimeout(5200); // include the five-second poll
+      assert.equal(await pages[i].locator("#shared-slot").inputValue(), selected);
+      await pages[i].locator("#shared-my-name").fill("연결 전 이름");
+      await pages[i].locator('[data-shared="rename"]').click();
+      await waitSaved(pages[i]); await waitSynced();
+      assert.equal(await pages[i].locator("#shared-slot").inputValue(), selected);
+      assert.equal(await pages[i].locator('label[for="shared-score-1"]').innerText(), round.players[1]);
+    }
+    await pages[i].locator("#shared-slot").focus();
     await pages[i].locator('[data-shared="claim"]').click();
     await waitSaved(pages[i]); await waitSynced();
+    const roster = (await db.query("select user_id,slot from public.golf_members order by slot")).rows;
+    assert.equal(roster.find(m => m.user_id === users[i]).slot, Number(selected));
+    const current = (await db.query("select round from public.golf_games")).rows[0].round;
+    assert.deepEqual(current.holes, round.holes);
+    assert.deepEqual(current.initial, round.initial);
+    assert.deepEqual(current.settled, round.settled);
+    assert.deepEqual(current.cash, round.cash);
+    if (i === 1) for (const p of pages.slice(0,4))
+      assert.equal(await p.locator('label[for="shared-score-1"]').innerText(), "연결 전 이름");
   }
   await pages[0].locator('[data-initial="0"]').selectOption("2");
   await waitSaved(pages[0]); await waitSynced();
@@ -364,7 +397,7 @@ try {
   await pwa.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
   await pwa.evaluate(async r => {
     localStorage.setItem("golf-hussein-v1", JSON.stringify({version:1,rounds:[r]}));
-    const cache = await caches.open("golf-hussein-v3");
+    const cache = await caches.open("golf-hussein-v4");
     await cache.put(new URL("./app.js", location.href), new Response("document.querySelector('#app').textContent='STALE_APP'",{headers:{"Content-Type":"application/javascript"}}));
     await cache.put(new URL("./shared-ui.js", location.href), new Response("",{headers:{"Content-Type":"application/javascript"}}));
   }, round);
@@ -385,7 +418,7 @@ try {
   }
   // A rendered UI alone does not prove that background cache.put has finished.
   await pwa.waitForFunction(async () => {
-    const cache = await caches.open("golf-hussein-v3");
+    const cache = await caches.open("golf-hussein-v4");
     const app = await cache.match(new URL("./app.js", location.href));
     const shared = await cache.match(new URL("./shared-ui.js", location.href));
     return app && shared && !(await app.text()).includes("STALE_APP") &&
