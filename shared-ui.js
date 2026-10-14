@@ -164,8 +164,10 @@ panel.addEventListener("focusin", (e) => {
     editRevision = api?.game?.revision;
   }
 });
-panel.addEventListener("focusout", () => {
+panel.addEventListener("focusout", (e) => {
   editing = false;
+  // Do not replace the save button between WebKit mousedown and click.
+  if (e.target.id === "shared-my-name") return;
   setTimeout(() => {
     if (!busy && !editing && api?.game) render();
   }, 0);

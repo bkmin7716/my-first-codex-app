@@ -256,6 +256,7 @@ try {
   for (const p of pages.slice(0,4)) assert.equal(await p.locator('[data-initial="0"]').inputValue(), "2");
   await pages[1].locator("#shared-my-name").fill("민수");
   await pages[1].locator('[data-shared="rename"]').click();
+  await pages[1].waitForFunction(()=>document.querySelector('label[for="shared-score-1"]')?.textContent.includes("민수"));
   await waitSaved(pages[1]); await waitSynced();
   for (const p of pages.slice(0,4)) {
     assert.match(await p.locator('label[for="shared-score-1"]').innerText(), /민수.*2등 · A팀/);
