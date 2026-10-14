@@ -11,8 +11,10 @@ await db.exec(`create role anon; create role authenticated;
  grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated;
  create publication supabase_realtime;`);
 await db.exec(
-  readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8"),
+  readFileSync(new URL("./fixtures/legacy-schema.sql", import.meta.url), "utf8"),
 );
+await db.exec(readFileSync(new URL("../supabase/001-player-slots.sql", import.meta.url), "utf8"));
+await db.exec(readFileSync(new URL("../supabase/001-player-slots.sql", import.meta.url), "utf8"));
 const users = Array.from(
   { length: 5 },
   (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
@@ -77,6 +79,7 @@ test("PostgreSQL: 4명 참여·권한·충돌·이력·재계산·최종 잠금"
       (await rpc(1, "golf_join", [game.code, "다른 이름"])).revision,
       game.revision,
     );
+    for (let i=0;i<4;i++) await change(i,"slot",{value:i});
     assert.equal(
       (await as(2, "select * from public.golf_members")).rows.length,
       4,
@@ -282,3 +285,18 @@ test("PostgreSQL: 4명 참여·권한·충돌·이력·재계산·최종 잠금"
 });
 
 test.after(async () => db.close());
+
+test("fixed slots, initial permutation, partial roster lock and rename preserve money", async () => {
+ const r=createRound("hussein"); r.sharedSlots=true; r.initial=[3,2,1,0]; r.holes[0].scores=[4,4,4,4]; r.holes[0].paid=[1,2,3,4]; r.settled=[10,20,30,40];
+ let g=await rpc(0,"golf_create",[r,"소유자"]);
+ await assert.rejects(()=>rpc(0,"golf_mutate",[g.id,g.revision,"lock",{hole:0,value:true}]),/4명의/);
+ for(const i of [3,1,2]) g=await rpc(i,"golf_join",[g.code,`이름${i}`]);
+ assert.deepEqual(g.round.players,["소유자","이름3","이름1","이름2"]);
+ assert.deepEqual(calculate(g.round).holes[0].rank,[3,2,1,0]);
+ await assert.rejects(()=>rpc(1,"golf_mutate",[g.id,g.revision,"initial",{value:[0,0,2,3]}]));
+ await assert.rejects(()=>rpc(1,"golf_mutate",[g.id,g.revision,"slot",{value:0}]),/변경할 수 없습니다/);
+ g=await rpc(3,"golf_mutate",[g.id,g.revision,"name",{value:"새 이름"}]);
+ assert.equal(g.round.players[1],"새 이름"); assert.deepEqual(g.round.holes[0].paid,r.holes[0].paid); assert.deepEqual(g.round.settled,r.settled);
+ g=await rpc(0,"golf_mutate",[g.id,g.revision,"initial",{value:[0,1,2,3]}]);
+ assert.equal(calculate(g.round).holes[0].rank[1],1);
+});

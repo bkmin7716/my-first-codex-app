@@ -14,6 +14,8 @@ create table public.golf_members (
  game_id uuid not null references public.golf_games(id) on delete cascade,
  user_id uuid not null references auth.users(id),
  name text not null check (length(trim(name)) between 1 and 40),
+ slot integer check (slot between 0 and 3),
+ unique(game_id,slot),
  joined_at timestamptz not null default now(),
  primary key(game_id,user_id)
 );
@@ -92,19 +94,22 @@ end;
 $$;
 
 create function public.golf_create(p_round jsonb,p_name text) returns public.golf_games language plpgsql security definer set search_path='' as $$
-declare g public.golf_games;
+declare g public.golf_games; assigned integer;
 begin
  if auth.uid() is null then raise exception '로그인이 필요합니다'; end if;
  if octet_length(p_round::text)>100000 then raise exception '라운드 크기 초과'; end if;
  perform public.golf_validate(p_round);
+ if p_round->>'sharedSlots'='true' then
+  p_round:=jsonb_set(p_round,'{players,0}',to_jsonb(trim(p_name))); assigned:=0;
+ end if;
  insert into public.golf_games(owner_id,round) values(auth.uid(),p_round) returning * into g;
- insert into public.golf_members(game_id,user_id,name) values(g.id,auth.uid(),trim(p_name));
+ insert into public.golf_members(game_id,user_id,name,slot) values(g.id,auth.uid(),trim(p_name),assigned);
  insert into public.golf_audit(game_id,actor_id,actor_name,action,detail) values(g.id,auth.uid(),trim(p_name),'create','{}');
  return g;
 end;
 $$;
 create function public.golf_join(p_code text,p_name text) returns public.golf_games language plpgsql security definer set search_path='' as $$
-declare g public.golf_games;
+declare g public.golf_games; assigned integer;
 begin
  if auth.uid() is null then raise exception '로그인이 필요합니다'; end if;
  select * into g from public.golf_games where code=upper(trim(p_code)) for update;
@@ -112,10 +117,14 @@ begin
  if exists(select 1 from public.golf_members where game_id=g.id and user_id=auth.uid()) then return g; end if;
  if g.finalized then raise exception '최종 확정된 게임입니다'; end if;
  if (select count(*) from public.golf_members where game_id=g.id)>=4 then raise exception '참가 인원 4명이 모두 찼습니다'; end if;
- insert into public.golf_members(game_id,user_id,name) values(g.id,auth.uid(),trim(p_name));
+ if g.round->>'sharedSlots'='true' then
+  select i into assigned from generate_series(0,3) i where not exists(select 1 from public.golf_members m where m.game_id=g.id and m.slot=i) order by i limit 1;
+  g.round:=jsonb_set(g.round,array['players',assigned::text],to_jsonb(trim(p_name)));
+ end if;
+ insert into public.golf_members(game_id,user_id,name,slot) values(g.id,auth.uid(),trim(p_name),assigned);
  insert into public.golf_audit(game_id,actor_id,actor_name,action,detail) values(g.id,auth.uid(),trim(p_name),'join','{}');
  -- Broadcast membership changes through the game row, too.
- update public.golf_games set revision=revision+1,updated_at=now() where id=g.id returning * into g;
+ update public.golf_games set round=g.round,revision=revision+1,updated_at=now() where id=g.id returning * into g;
  return g;
 end;
 $$;
@@ -127,7 +136,23 @@ begin
  if who is null then raise exception '참가자만 수정할 수 있습니다'; end if;
  if p_revision is null or g.revision<>p_revision then raise exception '다른 참가자가 수정했습니다. 최신 내용을 확인 후 다시 입력하세요'; end if;
  if octet_length(p_detail::text)>100000 then raise exception '요청 크기 초과'; end if;
- if p_action='finalize' then
+ if p_action in ('name','slot') then
+  if p_action='slot' then
+   if g.finalized then raise exception '최종 확정 잠금 상태입니다'; end if;
+   if exists(select 1 from public.golf_members where game_id=g.id and user_id=auth.uid() and slot is not null) then raise exception '선수 슬롯은 변경할 수 없습니다'; end if;
+   player:=(p_detail->>'value')::integer;
+   if player is null or player not between 0 and 3 then raise exception '선수 번호 오류'; end if;
+   if exists(select 1 from public.golf_members where game_id=g.id and slot=player) then raise exception '이미 연결된 선수 슬롯입니다'; end if;
+   update public.golf_members set slot=player where game_id=g.id and user_id=auth.uid();
+   before_value:=g.round->'players'->player; after_value:=to_jsonb(who);
+  else
+   if jsonb_typeof(p_detail->'value') is distinct from 'string' or length(trim(p_detail->>'value')) not between 1 and 40 then raise exception '내 표시 이름을 1~40자로 입력하세요'; end if;
+   select slot into player from public.golf_members where game_id=g.id and user_id=auth.uid();
+   before_value:=to_jsonb(who); after_value:=to_jsonb(trim(p_detail->>'value'));
+   update public.golf_members set name=trim(p_detail->>'value') where game_id=g.id and user_id=auth.uid();
+  end if;
+  if player is not null then g.round:=jsonb_set(g.round,array['players',player::text],after_value); end if;
+ elsif p_action='finalize' then
   if auth.uid()<>g.owner_id then raise exception '생성자만 최종 잠금을 변경할 수 있습니다'; end if;
   if jsonb_typeof(p_detail->'value') is distinct from 'boolean' then raise exception '잠금 값 오류'; end if;
   if (p_detail->>'value')::boolean then
@@ -144,6 +169,7 @@ begin
    if jsonb_typeof(p_detail->'value') is distinct from 'boolean' then raise exception '잠금 값 오류'; end if;
    before_value:=to_jsonb(h=any(g.locked_holes));
    if (p_detail->>'value')::boolean then
+    if h=0 and (select count(slot) from public.golf_members where game_id=g.id)<>4 then raise exception '4명의 선수 슬롯과 초기 순위를 모두 확정하세요'; end if;
     if exists(select 1 from jsonb_array_elements(g.round->'holes'->h->'scores') v where v='null'::jsonb) then raise exception '모든 선수의 타수를 입력하세요'; end if;
     if not h=any(g.locked_holes) then g.locked_holes:=array_append(g.locked_holes,h); end if;
    else
@@ -162,6 +188,9 @@ begin
    else
     if auth.uid()<>g.owner_id then raise exception '설정·지급 기록은 생성자만 수정할 수 있습니다'; end if;
     case p_action
+     when 'initial' then
+      if cardinality(g.locked_holes)>0 then raise exception '초기 순위 수정 전 모든 홀의 잠금을 해제하세요'; end if;
+      path:=array['initial'];
      when 'rate' then
       if cardinality(g.locked_holes)>0 then raise exception '단가 수정 전 모든 홀의 잠금을 해제하세요'; end if;
       path:=array['rate'];

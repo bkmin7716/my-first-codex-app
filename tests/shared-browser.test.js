@@ -186,6 +186,7 @@ try {
       window.__testUser = i;
     }, i);
     const p = await context.newPage();
+    p.on("dialog", d=>d.accept());
     p.on("pageerror", (e) => errors.push(e.message));
     pages.push(p);
     await p.goto(origin + basePath + "/");
@@ -244,6 +245,23 @@ try {
   await pages[4].locator('[data-shared="join"]').click();
   await pages[4].getByRole("alert").filter({ hasText: "4명" }).waitFor();
   await waitSynced();
+  assert.equal(await pages[0].locator('[data-shared="lock"]').isDisabled(), true);
+  for (let i=0;i<4;i++) {
+    await pages[i].locator("#shared-slot").selectOption(String(i));
+    await pages[i].locator('[data-shared="claim"]').click();
+    await waitSaved(pages[i]); await waitSynced();
+  }
+  await pages[0].locator('[data-initial="0"]').selectOption("2");
+  await waitSaved(pages[0]); await waitSynced();
+  for (const p of pages.slice(0,4)) assert.equal(await p.locator('[data-initial="0"]').inputValue(), "2");
+  await pages[1].locator("#shared-my-name").fill("민수");
+  await pages[1].locator('[data-shared="rename"]').click();
+  await pages[1].waitForFunction(()=>document.querySelector('label[for="shared-score-1"]')?.textContent.includes("민수"));
+  await waitSaved(pages[1]); await waitSynced();
+  for (const p of pages.slice(0,4)) {
+    assert.match(await p.locator('label[for="shared-score-1"]').innerText(), /민수.*2등 · A팀/);
+    assert.equal(await p.locator("#shared-score-1").evaluate(e=>getComputedStyle(e).backgroundColor), "rgb(255, 244, 184)");
+  }
   for (let i = 0; i < 4; i++) {
     const p = pages[i];
     await p.waitForTimeout(100);
