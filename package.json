@@ -4,9 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/engine.test.js && node tests/ui.test.js && node tests/shared-client.test.js && node tests/shared-db.test.js",
+    "test": "node tests/engine.test.js && node tests/ui.test.js && node tests/shared-client.test.js && node tests/shared-db.test.js && node tests/pages.test.js",
     "start": "python3 -m http.server 8080",
-    "test:browser": "node tests/shared-browser.test.js"
+    "test:browser": "node tests/shared-browser.test.js",
+    "build:pages": "node scripts/build-pages.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.14",

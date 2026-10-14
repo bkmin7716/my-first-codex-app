@@ -21,18 +21,10 @@
 ## 3. 공개 연결 정보 설정
 
 1. 프로젝트의 Connect 또는 Settings → API / API Keys에서 **Project URL**과 **Publishable key**를 확인합니다. 기존 프로젝트의 `anon` public 키도 지원합니다.
-2. 저장소 루트의 `shared-config.js`를 다음과 같이 수정합니다.
-
-   ```js
-   export const sharedConfig = {
-     url: 'https://프로젝트ID.supabase.co',
-     publishableKey: 'sb_publishable_공개키',
-   };
-   ```
-
-3. **service_role 키, sb_secret 키, 데이터베이스 비밀번호는 넣지 마세요.** GitHub Pages의 모든 파일은 브라우저에서 공개됩니다. 위 공개 키는 노출을 전제로 하며 실제 보호는 RLS·RPC가 담당합니다.
+2. GitHub 저장소 → Settings → Secrets and variables → Actions → Repository secrets에 `SUPABASE_URL`과 `SUPABASE_PUBLISHABLE_KEY`를 등록합니다. 두 번째 값은 반드시 `sb_publishable_`로 시작하는 Publishable key입니다.
+3. Actions는 이 두 값만 배포 폴더 `site/shared-config.js`에 기록합니다. 저장소의 빈 설정 파일은 그대로 유지합니다. **service_role, sb_secret, JWT(legacy anon 포함)는 빌드에서 거부합니다.** GitHub Pages의 공개 키는 브라우저에서 볼 수 있으며 실제 보호는 RLS·RPC가 담당합니다. 로컬 개발 때만 `shared-config.js`에 공개 값을 입력하고 커밋하지 마세요.
 4. 공동 플레이는 jsDelivr에서 고정 버전의 Supabase JS SDK(2.57.4)를 불러옵니다. 휴대폰 네트워크에서 `cdn.jsdelivr.net`과 프로젝트의 HTTPS/WSS 연결이 허용되어야 합니다. 별도 Supabase Edge Function이나 서버 배포는 필요 없습니다.
-5. 이미 배포한 뒤 설정이나 JS를 바꾸었다면 `sw.js`의 `CACHE` 버전도 올려 배포하세요. 기존 설치 앱에 새 파일이 캐시되도록 앱을 닫고 다시 여세요.
+5. 배포 빌드는 실행 번호별로 서비스 워커 캐시 버전을 자동 갱신합니다. 기존 설치 앱에 새 파일이 캐시되도록 앱을 닫고 다시 여세요.
 
 ## 4. 테스트 및 GitHub Pages 배포
 
@@ -40,8 +32,8 @@
 2. `npm test`로 기존 계산·저장·화면 테스트와 공동 클라이언트·PostgreSQL 권한 테스트를 실행합니다.
 3. 브라우저 검사도 하려면 `npx playwright install chromium` 후 `npm run test:browser`를 실행합니다. Linux 환경에서 라이브러리가 부족하면 `npx playwright install --with-deps chromium`을 사용합니다. 시스템 Chromium 경로는 `CHROMIUM_PATH`로 지정할 수 있습니다.
 4. GitHub 저장소 Settings → Pages → Source를 **GitHub Actions**로 지정합니다.
-5. PR을 검토·병합하고 `shared-config.js` 설정을 반영합니다.
-6. Actions → **골프 앱 Pages 배포** → **Run workflow**를 실행합니다. 배포는 자동 푸시 방식이 아닌 수동 방식입니다. 테스트가 통과한 정적 파일만 배포합니다. SQL·테스트·문서는 배포 파일에 포함되지 않습니다.
+5. PR의 자동 테스트 통과를 확인하고 main으로 병합합니다.
+6. main 병합/푸시 후 **골프 앱 Pages 배포**가 자동 실행됩니다. 병합 후 Pages를 활성화했다면 Actions → **골프 앱 Pages 배포** → **Run workflow** → main을 선택해 재실행하세요. Secrets 변경만으로는 실행되지 않으므로 수동 재실행하세요. 테스트와 설정 검증이 통과한 정적 파일만 배포합니다. 누락된 URL이나 잘못된 키는 값을 출력하지 않고 빌드를 중단합니다. SQL·테스트·문서는 배포 파일에 포함되지 않습니다.
 7. Actions가 표시한 실제 배포 URL을 사용하세요. 기본 예상 주소는 https://bkmin7716.github.io/my-first-codex-app/ 입니다.
 8. 휴대폰 Safari/Chrome에서 HTTPS 주소를 엽니다. 홈 화면에 추가해도 공동 플레이에는 인터넷이 필요합니다. 기존 로컬 라운드는 최초 캐시 후 오프라인에서도 동작합니다.
 
