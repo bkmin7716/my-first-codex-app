@@ -33,3 +33,46 @@ test('26 단가 변경·Near 변경에 따른 지급 예정 재계산',()=>{cons
 test('27 일반 1~4명 전·후반 타수 및 입력홀 Par 대비',()=>{for(let n=1;n<=4;n++){const r=createRound('normal',n);r.holes[0].scores=Array(n).fill(5);r.holes[9].scores=Array(n).fill(3);const t=calculate(r).totals[0];assert.deepEqual(t,{front:5,back:3,total:8,played:2,relative:0});}});
 test('28 입력 오류·이후 미완료 지급 재정산 표시',()=>{assert.throws(()=>calc([[0,4,5,6]]));assert.throws(()=>calc([[3.2,4,5,6]]));const r=make([[3,4,6,7],[3,4,6,7]]);r.holes[1].paid=calculate(r).holes[1].expected;r.holes[0].scores[0]=null;assert.equal(calculate(r).holes[1].stale,true);});
 test('29 오프라인 자산 누락 없음·상대 경로 Pages 지원',()=>{const sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');for(const asset of ['index.html','app.js','engine.js','storage.js','style.css','manifest.webmanifest','icon-192.png','icon-512.png']){assert.ok(existsSync(new URL('../'+asset,import.meta.url)));assert.ok(sw.includes(asset));}});
+
+test('30 첫 홀 팀은 초기 순위, 현재 홀 최종 순위와 구분',()=>{
+ const r=make([[3,4,6,7]]);r.initial=[3,2,1,0];
+ const x=calculate(r).holes[0];
+ assert.deepEqual(x.previousRank,[3,2,1,0]);assert.equal(x.hussein,2);
+ assert.deepEqual(x.allies,[3,1,0]);assert.deepEqual(x.rank,[0,1,2,3]);
+ assert.equal(x.winner,'B');assert.deepEqual(x.earned,[1,1,0,1]);
+ assert.deepEqual(x.expected,[100000,100000,0,100000]);
+});
+test('31 입력 전·도중·완료 후 현재 팀 고정, 다음 홀은 직전 최종 순위 사용',()=>{
+ const r=make([[6,3,4,5]]);
+ for(const scores of [[null,null,null,null],[3,8,null,null],[3,8,2,6]]){
+  r.holes[1].scores=scores;const x=calculate(r).holes[1];
+  assert.deepEqual(x.previousRank,[1,2,3,0]);assert.equal(x.hussein,2);
+  assert.deepEqual(x.allies,[1,3,0]);
+  if(scores.includes(null)){assert.equal(x.winner,null);assert.equal(x.rank,null);assert.deepEqual(x.earned,[0,0,0,0]);}
+ }
+ const c=calculate(r);assert.equal(c.holes[1].winner,'A');
+ assert.deepEqual(c.holes[1].earned,[0,0,3,0]);assert.equal(c.holes[1].rank[1],0);
+ assert.equal(c.holes[2].hussein,0);assert.equal(c.holes[2].winner,null);
+});
+test('32 이전 홀 수정 시 팀·승패·이월·정산 순차 재계산, 실제 기록 보존',()=>{
+ const r=make([[6,3,4,5],[3,8,2,6],[4,4,4,4]]);r.rate=200000;
+ const before=calculate(r);assert.deepEqual(before.points,[0,3,3,0]);
+ r.holes[1].paid=[...before.holes[1].expected];r.settled=[...before.post.amounts];
+ const actual=structuredClone(r);r.holes[0].scores=[3,4,5,6];
+ const c=calculate(r);assert.equal(c.holes[0].winner,'tie');
+ assert.equal(c.holes[1].hussein,1);assert.deepEqual(c.holes[1].allies,[0,2,3]);
+ assert.equal(c.holes[1].winner,'B');assert.equal(c.holes[1].pot,6);
+ assert.deepEqual(c.points,[2,0,2,2]);assert.equal(c.carry,3);
+ assert.deepEqual(c.holes[1].expected,[400000,0,400000,400000]);
+ assert.deepEqual(c.post.amounts,[-2400000,-2800000,-2400000,-2400000]);
+ assert.equal(c.holes[1].stale,true);assert.deepEqual(r.holes[1].paid,actual.holes[1].paid);
+ assert.deepEqual(r.settled,actual.settled);
+ r.holes[0].scores[0]=null;const blocked=calculate(r);
+ assert.equal(blocked.holes[1].previousRank,null);assert.equal(blocked.holes[1].hussein,null);
+ assert.equal(blocked.holes[1].rank,null);assert.equal(blocked.holes[1].winner,null);
+});
+test('33 현재 홀 1등인 후세인도 승리 3점, Near와 승패 분리',()=>{
+ const c=calc([[6,1,2,3]],3,3),x=c.holes[0];
+ assert.equal(x.hussein,1);assert.equal(x.rank[0],1);assert.equal(x.winner,'A');
+ assert.deepEqual(x.earned,[0,3,0,1]);assert.equal(x.rank[1],2);
+});

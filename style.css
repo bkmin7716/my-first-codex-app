@@ -3,3 +3,14 @@
 [hidden]{display:none!important}.shared-launcher{max-width:680px;margin:16px auto;padding:0 20px}.shared-launcher button{width:100%}.shared-mode .tabs{display:none}.shared-panel{padding-bottom:40px}.shared-panel .card{overflow-wrap:anywhere}.shared-panel input,.shared-panel select{margin-bottom:14px}.shared-panel #shared-status{font-size:14px;color:#52675a}
 
 .shared-panel input.second-place { background: #fff4b8; border: 3px solid #8a6510; }
+
+.score.current-hussein{background:#fff4cc;border:3px solid #8a6510}
+.score .badge{display:inline-block;margin:6px 4px 0 0;white-space:normal}
+.hussein-badge{background:#654900;color:#fff;font-weight:750}
+.score.winner-card{box-shadow:0 0 0 2px #287846}
+.victory{background:#176338;color:#fff}
+.result-title{display:block;font-size:24px;line-height:1.4}
+.next-hussein{border:2px dashed #557c9c;background:#eef5fc;border-radius:16px;padding:16px;margin:16px 0}
+.next-hussein p{margin-bottom:0}
+.score>div{min-width:0;overflow-wrap:anywhere}
+.shared-panel .score input{margin-bottom:0}
