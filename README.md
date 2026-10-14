@@ -1,10 +1,10 @@
 # Golf Score & Hussein
 
-iPhone Safari용 한국어 골프 스코어·후세인 게임 정적 PWA입니다. HTML/CSS/JavaScript만 사용하고 서버, 데이터베이스, 외부 API 및 런타임 의존성이 없습니다.
+iPhone Safari용 한국어 골프 스코어·후세인 게임 정적 PWA입니다. 기존 로컬 모드는 HTML/CSS/JavaScript와 localStorage로 동작합니다. 4명 공동 플레이는 Supabase Auth·PostgreSQL·Realtime을 사용합니다.
 
 ## 실행
 
-Node.js 22 이상에서 `npm test`로 자동 테스트를 실행합니다. 설치할 npm 패키지는 없습니다.
+Node.js 22 이상에서 `npm test`로 자동 테스트를 실행합니다. 먼저 `npm ci`로 테스트 전용 의존성을 설치합니다.
 
 로컬 실행은 `npm start` (Python 3 필요) 후 `http://localhost:8080`을 엽니다. 파일을 더블클릭하는 file:// 실행은 ES 모듈과 서비스 워커를 지원하지 않습니다. 배포 환경은 HTTPS를 사용하세요.
 
@@ -36,19 +36,19 @@ JSON 백업을 정기적으로 내려받으세요. 복원은 검증 및 확인 �
 - 선불 잔액은 실제 지급 기준이며 부족액은 전체 예정 상금 기준입니다. 실제 지급이 자금을 초과한 부족액도 별도 표시됩니다.
 - 중간 결과는 임시 정산입니다. 일반 게임의 Par 대비는 입력된 홀만 반영합니다.
 
-## GitHub 반영 및 Pages 배포
+## 4명 공동 플레이와 배포
 
-현재 작업은 `bkmin7716/my-first-codex-app` 로컬 체크아웃에 준비되었으며 원격 반영 및 배포는 아직 하지 않았습니다.
+**설정부터 4대 휴대폰 검증까지:** [SHARED_SETUP.md](SHARED_SETUP.md)
 
-검토 후 승인된 경우 변경 사항을 새 브랜치에 커밋하고 PR로 반영할 수 있습니다. ZIP 사용 시 압축을 풀어 저장소 루트에 파일을 넣으세요.
-
-1. GitHub 저장소 **Settings → Pages → Build and deployment → Source**에서 **GitHub Actions**를 선택합니다.
-2. 변경 내용을 기본 브랜치에 반영합니다.
-3. **Actions → 골프 앱 Pages 배포 → Run workflow**로 수동 실행합니다.
-4. 워크플로는 테스트 후 정적 앱 파일만 배포합니다. 테스트 코드와 문서는 배포 자산에 포함하지 않습니다.
-5. 성공한 실행의 배포 URL을 사용하세요. 기본 예상 주소는 `https://bkmin7716.github.io/my-first-codex-app/`이며 실제 활성화 여부는 아직 검증되지 않았습니다.
-
-자동 푸시 배포를 하지 않고 수동 실행만 허용합니다. 비공개 저장소의 GitHub Pages 사용 가능 여부는 GitHub 요금제와 조직 정책에 따라 다릅니다.
+- 기존 로컬 라운드를 원본 변경 없이 공동 게임으로 복사하거나 새 후세인 게임을 만듭니다.
+- 12자리 참여 코드/초대 링크로 4명이 참여하고 모두 모든 선수의 타수·Near를 입력합니다.
+- Supabase 서버에 저장한 뒤 Realtime으로 전달하고, 동일한 계산 엔진으로 전체 결과를 재계산합니다.
+- 변경 이력에 실제 인증 사용자 ID·표시 이름·서버 시각·변경 전후 값이 기록됩니다.
+- 누구나 입력 완료 홀을 잠그고 생성자만 해제합니다. 18홀 잠금 후 생성자가 최종 정산을 확정하면 전체 데이터가 잠깁니다. 서버에서도 권한을 강제합니다.
+- 단가·지급·수금·환급 기록은 생성자만 변경합니다. 동시 변경 충돌은 오래된 revision의 저장을 거부하여 덮어쓰기를 막습니다.
+- 공동 기능은 Supabase 프로젝트와 공개 연결 설정, 인터넷이 필요합니다. 설정하지 않았을 때 임시 공동 게임으로 대체하지 않습니다.
+- `shared-config.js`에는 공개 URL·publishable/anon 키만 넣습니다. `supabase/schema.sql`을 새 Supabase 프로젝트에 한 번 설치합니다. 자세한 한국어 절차와 익명 세션 유지·운영 제약은 설정 문서를 참고하세요.
+- GitHub Pages는 Actions의 **골프 앱 Pages 배포**를 수동 실행합니다. PR에는 별도 자동 테스트 워크플로가 적용됩니다.
 
 ## iPhone 설치 및 오프라인
 
@@ -63,8 +63,11 @@ JSON 백업을 정기적으로 내려받으세요. 복원은 검증 및 확인 �
 - `tests/engine.test.js`, `tests/ui.test.js`: 자동 검증
 - `.github/workflows/pages.yml`: 수동 Pages 배포
 
-## 검증 결과와 남은 확인
+## 검증
 
-`npm test`: **35개 통과, 실패 0개**. 계산·저장·자산·모바일 구조 29개, 화면 이벤트 6개. JavaScript 문법 검사도 통과했습니다. UI 이벤트 테스트는 최소 DOM 대역을 사용하며 브라우저 렌더링 테스트가 아닙니다.
+- `npm test`: 기존 계산·저장·화면 35개, 공동 클라이언트 4개, PostgreSQL 권한·잠금·충돌·감사·재계산 11개 시나리오를 검사합니다.
+- `npm run test:browser`: 서로 격리된 모바일 Chromium 컨텍스트 5개와 PGlite DB로 생성·참여·정원·입력·동기화 이벤트·Near·잠금·이력·오프라인·재접속 목록·로컬 원본 보존을 검사합니다. `npx playwright install chromium`이 필요합니다.
+- DB 테스트는 실제 PostgreSQL 엔진인 PGlite에서 RLS·RPC를 실행합니다. 브라우저 테스트의 인증과 이벤트 전송은 테스트 전용 어댑터입니다. 제품 코드에는 이 어댑터가 포함되지 않습니다.
+- 실제 Supabase 프로젝트의 Auth·Realtime 설정 및 실제 iPhone 4대 동작은 사용자의 서비스 설정 후 별도 확인이 필요합니다. 검증 절차는 SHARED_SETUP.md에 있습니다.
 
-필수 항목 1~23은 계산/저장 자동 검사로 확인했습니다. 항목 24는 viewport·작은 화면 CSS·safe area 정적 검사만 수행했습니다. 환경에 브라우저 제어 도구가 없어 실제 iPhone 화면, 터치/숫자 키패드, Safari 공유/클립보드, 서비스 워커 오프라인 및 설치 동작은 미검증입니다. 배포 전/후 실제 Safari에서 확인해야 합니다. 발견된 계산 실패는 없으며 테스트 16의 잘못된 기대값을 규칙에 맞게 수정하고 재실행했습니다.
+새 파일: `shared.js`(Supabase 연결·동기화), `shared-ui.js`(공동 플레이 화면), `shared-config.js`(공개 설정), `supabase/schema.sql`(서버 데이터·권한·변경 RPC), `tests/shared-*.test.js`(공동 기능 검증).

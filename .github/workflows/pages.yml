@@ -19,11 +19,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - run: npm ci
       - run: npm test
       - uses: actions/configure-pages@v5
       - run: |
           mkdir -p site
-          cp index.html style.css app.js engine.js storage.js sw.js manifest.webmanifest icon-192.png icon-512.png site/
+          cp index.html style.css app.js engine.js storage.js shared.js shared-ui.js shared-config.js sw.js manifest.webmanifest icon-192.png icon-512.png site/
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
