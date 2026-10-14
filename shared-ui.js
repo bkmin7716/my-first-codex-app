@@ -37,6 +37,7 @@ const esc = (v) =>
 const money = (v) => `${v.toLocaleString("ko-KR")} VND`;
 const sum = (a) => a.reduce((s, v) => s + v, 0);
 const disabled = (v) => (v ? "disabled" : "");
+const nameDrafts = new Map();
 const actions = {
   score: "타수 변경",
   near: "Near 변경",
@@ -99,7 +100,7 @@ function lobby() {
 }
 function roster(g, r, owner) {
  const me = api.members.find(m => m.user_id === api.userId);
- return `<div class="card"><h3>선수 슬롯 · 초기 순위</h3><p>슬롯은 점수·지급 기록의 고정 연결입니다. 미참가 슬롯은 참가 후 이름이 확정됩니다.</p>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${api.members.some(m=>m.slot===i)?"✓ 확정":"· 미참가 / 연결 미확정"}</p>`).join("")}<label for="shared-my-name">내 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(me?.name)}"><button data-shared="rename">이름 저장</button>${me && me.slot == null ? `<label for="shared-slot">기존 점수·정산이 본인 것인 슬롯을 선택하세요 (연결 후 변경 불가)</label><select id="shared-slot">${r.players.map((name,i)=>api.members.some(m=>m.slot===i)?"":`<option value="${i}">슬롯 ${i+1} · ${esc(name)}</option>`).join("")}</select><button data-shared="claim">내 선수 슬롯 연결</button>`:""}${r.mode==='hussein'?r.initial.map((slot,rank)=>`<label for="shared-initial-${rank}">${rank+1}등</label><select id="shared-initial-${rank}" data-initial="${rank}" ${disabled(!owner || busy || g.finalized || g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>슬롯 ${i+1} · ${esc(name)}${api.members.some(m=>m.slot===i)?"":" (미참가 / 미확정)"}</option>`).join("")}</select>`).join(""):""}</div>`;
+ return `<div class="card"><h3>선수 슬롯 · 초기 순위</h3><p>슬롯은 점수·지급 기록의 고정 연결입니다. 미참가 슬롯은 참가 후 이름이 확정됩니다.</p>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${api.members.some(m=>m.slot===i)?"✓ 확정":"· 미참가 / 연결 미확정"}</p>`).join("")}<label for="shared-my-name">내 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(nameDrafts.get(g.id) ?? me?.name)}"><button data-shared="rename">이름 저장</button>${me && me.slot == null ? `<label for="shared-slot">기존 점수·정산이 본인 것인 슬롯을 선택하세요 (연결 후 변경 불가)</label><select id="shared-slot">${r.players.map((name,i)=>api.members.some(m=>m.slot===i)?"":`<option value="${i}">슬롯 ${i+1} · ${esc(name)}</option>`).join("")}</select><button data-shared="claim">내 선수 슬롯 연결</button>`:""}${r.mode==='hussein'?r.initial.map((slot,rank)=>`<label for="shared-initial-${rank}">${rank+1}등</label><select id="shared-initial-${rank}" data-initial="${rank}" ${disabled(!owner || busy || g.finalized || g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>슬롯 ${i+1} · ${esc(name)}${api.members.some(m=>m.slot===i)?"":" (미참가 / 미확정)"}</option>`).join("")}</select>`).join(""):""}</div>`;
 }
 function gameView() {
   const g = api.game,
@@ -152,12 +153,13 @@ localRoot.addEventListener("click", (e) => {
   panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-name")?.focus();
 });
 panel.addEventListener("input", (e) => {
+  if (e.target.id === "shared-my-name" && api?.game) nameDrafts.set(api.game.id,e.target.value);
   if (e.target.id === "shared-name") draftName = e.target.value;
   if (e.target.id === "shared-code") draftCode = e.target.value;
   if (e.target.id === "shared-source") selectedSource = e.target.value;
 });
 panel.addEventListener("focusin", (e) => {
-  if (e.target.matches("[data-shared-score],#shared-near,#shared-rate")) {
+  if (e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,[data-initial]")) {
     editing = true;
     editRevision = api?.game?.revision;
   }
@@ -304,7 +306,7 @@ panel.addEventListener("click", (e) => {
       await api.open(b.dataset.openGame);
       page = "score";
     }
-    if (act === "rename") await mutate("name", {value:panel.querySelector("#shared-my-name").value.trim()});
+    if (act === "rename") { await mutate("name", {value:(nameDrafts.get(api.game.id) ?? panel.querySelector("#shared-my-name").value).trim()}); nameDrafts.delete(api.game.id); }
     if (act === "claim" && confirm("선택한 슬롯의 기존 점수·지급·정산 기록이 본인 기록인지 확인하세요. 연결 후 슬롯을 변경할 수 없습니다.")) await mutate("slot", {value:+panel.querySelector("#shared-slot").value});
     if (act === "invite") {
       const url = new URL(location.href);
