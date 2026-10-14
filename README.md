@@ -65,7 +65,7 @@ JSON 백업을 정기적으로 내려받으세요. 복원은 검증 및 확인 �
 
 ## 검증
 
-- `npm test`: 기존 계산·저장·화면 35개, 공동 클라이언트 3개, PostgreSQL 권한·잠금·충돌·감사·재계산 11개 시나리오를 검사합니다.
+- `npm test`: 기존 계산·저장·화면 35개, 공동 클라이언트 4개, PostgreSQL 권한·잠금·충돌·감사·재계산 11개 시나리오를 검사합니다.
 - `npm run test:browser`: 서로 격리된 모바일 Chromium 컨텍스트 5개와 PGlite DB로 생성·참여·정원·입력·동기화 이벤트·Near·잠금·이력·오프라인·재접속 목록·로컬 원본 보존을 검사합니다. `npx playwright install chromium`이 필요합니다.
 - DB 테스트는 실제 PostgreSQL 엔진인 PGlite에서 RLS·RPC를 실행합니다. 브라우저 테스트의 인증과 이벤트 전송은 테스트 전용 어댑터입니다. 제품 코드에는 이 어댑터가 포함되지 않습니다.
 - 실제 Supabase 프로젝트의 Auth·Realtime 설정 및 실제 iPhone 4대 동작은 사용자의 서비스 설정 후 별도 확인이 필요합니다. 검증 절차는 SHARED_SETUP.md에 있습니다.

@@ -125,7 +125,7 @@ begin
  select * into g from public.golf_games where id=p_game for update;
  select name into who from public.golf_members where game_id=p_game and user_id=auth.uid();
  if who is null then raise exception '참가자만 수정할 수 있습니다'; end if;
- if g.revision<>p_revision then raise exception '다른 참가자가 수정했습니다. 최신 내용을 확인 후 다시 입력하세요'; end if;
+ if p_revision is null or g.revision<>p_revision then raise exception '다른 참가자가 수정했습니다. 최신 내용을 확인 후 다시 입력하세요'; end if;
  if octet_length(p_detail::text)>100000 then raise exception '요청 크기 초과'; end if;
  if p_action='finalize' then
   if auth.uid()<>g.owner_id then raise exception '생성자만 최종 잠금을 변경할 수 있습니다'; end if;

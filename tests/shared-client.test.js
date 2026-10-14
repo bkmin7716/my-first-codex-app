@@ -153,3 +153,21 @@ test("공동 클라이언트: 충돌·오프라인은 성공 처리하지 않으
 test("공동 클라이언트: 설정 없으면 실제 연결 필요 안내, 임시 성공 없음", async () => {
   await assert.rejects(() => connectShared(), /설정이 필요/);
 });
+
+test("공동 클라이언트: PostgREST의 단일 행 배열 응답 지원", async () => {
+  const f = fixture(),
+    rpc = f.client.rpc;
+  f.client.rpc = async (...args) => {
+    const result = await rpc(...args);
+    return result.error ? result : { data: [result.data] };
+  };
+  const api = new SharedGames(f.client);
+  try {
+    await api.create(createRound("hussein"), "생성자");
+    assert.equal(api.game.id, "game");
+    await api.mutate("score", { hole: 0, player: 0, value: 4 });
+    assert.equal(api.game.revision, 1);
+  } finally {
+    api.stop();
+  }
+});

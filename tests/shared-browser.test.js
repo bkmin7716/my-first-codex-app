@@ -40,7 +40,7 @@ async function request(body) {
       keys.map((k) => body.args[k]),
     );
     for (const res of events) res.write("data: changed\n\n");
-    return result.rows[0].g;
+    return [result.rows[0].g];
   }
   if (!["golf_games", "golf_members", "golf_audit"].includes(body.table))
     throw Error("test table");

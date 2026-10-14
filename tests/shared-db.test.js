@@ -85,6 +85,16 @@ test("PostgreSQL: 4명 참여·권한·충돌·이력·재계산·최종 잠금"
   await t.test(
     "모든 참가자가 모든 선수의 점수 수정·동시 수정은 revision 충돌",
     async () => {
+      await assert.rejects(
+        () =>
+          rpc(1, "golf_mutate", [
+            game.id,
+            null,
+            "score",
+            { hole: 0, player: 0, value: 4 },
+          ]),
+        /다른 참가자/,
+      );
       const old = game.revision;
       await change(1, "score", { hole: 0, player: 0, value: 3 });
       await assert.rejects(

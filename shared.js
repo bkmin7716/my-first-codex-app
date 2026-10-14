@@ -30,7 +30,14 @@ export class SharedGames {
   async rpc(name, args) {
     const { data, error } = await this.client.rpc(name, args);
     if (error) throw Error(error.message);
-    return data;
+    // PostgREST can encode composite-returning RPCs as a one-row array.
+    const game = Array.isArray(data)
+      ? data.length === 1
+        ? data[0]
+        : null
+      : data;
+    if (!game?.id) throw Error("서버의 게임 응답을 확인할 수 없습니다.");
+    return game;
   }
   async create(round, name) {
     validateRound(round);
