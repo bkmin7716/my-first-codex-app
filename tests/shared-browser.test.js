@@ -259,8 +259,9 @@ try {
   await pages[1].waitForFunction(()=>document.querySelector('label[for="shared-score-1"]')?.textContent.includes("민수"));
   await waitSaved(pages[1]); await waitSynced();
   for (const p of pages.slice(0,4)) {
-    assert.match(await p.locator('label[for="shared-score-1"]').innerText(), /민수.*2등 · A팀/);
-    assert.equal(await p.locator("#shared-score-1").evaluate(e=>getComputedStyle(e).backgroundColor), "rgb(255, 244, 184)");
+    assert.match(await p.locator('label[for="shared-score-1"]').innerText(), /민수/);
+    assert.match(await p.locator(".score.current-hussein").innerText(), /현재 후세인/);
+    assert.equal(await p.locator(".score.current-hussein").evaluate(e=>getComputedStyle(e).backgroundColor), "rgb(255, 244, 204)");
   }
   for (let i = 0; i < 4; i++) {
     const p = pages[i];
@@ -273,6 +274,12 @@ try {
   await pages[3].waitForFunction(
     () => document.querySelector("#shared-score-1").value === "4",
   );
+  for (const p of pages.slice(0,4)) {
+    assert.match(await p.locator(".result").innerText(), /후세인 승/);
+    assert.equal(await p.locator(".victory").count(), 1);
+    assert.match(await p.locator(".next-hussein").innerText(), /다음 홀 후세인: 민수/);
+    assert.match(await p.locator(".score.current-hussein").innerText(), /3점 · 300,000 VND/);
+  }
   await pages[2].locator("#shared-near").selectOption("2");
   await waitSaved(pages[2]);
   await waitSynced();
