@@ -228,6 +228,12 @@ async function mutate(action, detail, revision) {
 panel.addEventListener("change", (e) => {
   const el = e.target;
   if (el.id === "shared-source") {selectedSource=el.value; draftInitial=null; draftPlayers=null; render();}
+  if (el.dataset.playerRank !== undefined) {
+    const initial=[...(draftInitial || localRounds().find(r=>r.id===selectedSource)?.initial || [0,1,2,3])];
+    const player=Number(el.dataset.playerRank), rank=Number(el.value)-1, previous=initial.indexOf(player);
+    if(previous !== rank) [initial[rank],initial[previous]]=[initial[previous],initial[rank]];
+    draftInitial=initial;render();
+  }
   if (el.dataset.draftRank !== undefined) {
     const initial=[...(draftInitial || localRounds().find(r=>r.id===selectedSource)?.initial || [0,1,2,3])], rank=+el.dataset.draftRank, other=initial.indexOf(+el.value);
     [initial[rank],initial[other]]=[initial[other],initial[rank]]; draftInitial=initial; render();
