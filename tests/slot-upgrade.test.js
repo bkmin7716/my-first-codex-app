@@ -17,7 +17,7 @@ test('legacy slot RPC P0001 reproduction and non-destructive upgrade', async () 
   await db.query('insert into auth.users values ($1)',[uid]);
   await db.query("select set_config('request.jwt.claim.sub',$1,false)",[uid]);
   await db.exec('set role authenticated');
-  const r=createRound('hussein');r.holes[0].scores=[3,4,5,6];r.holes[0].paid=[1,2,3,4];r.settled=[10,20,30,40];
+  const r=createRound('hussein');r.sharedSlots=true;r.holes[0].scores=[3,4,5,6];r.holes[0].paid=[1,2,3,4];r.settled=[10,20,30,40];
   const g=(await db.query('select to_jsonb(public.golf_create($1,$2)) g',[r,'wqq'])).rows[0].g;
   await assert.rejects(()=>db.query('select public.golf_mutate($1,$2,$3,$4)',[g.id,g.revision,'slot',{value:1}]), e=>e.code==='P0001' && /지원하지 않는 변경/.test(e.message));
   await db.exec('reset role');
@@ -26,7 +26,7 @@ test('legacy slot RPC P0001 reproduction and non-destructive upgrade', async () 
   assert.deepEqual((await db.query('select round from public.golf_games where id=$1',[g.id])).rows[0].round,r);
   await db.exec('set role authenticated');
   const linked=(await db.query('select to_jsonb(public.golf_mutate($1,$2,$3,$4)) g',[g.id,g.revision,'slot',{value:1}])).rows[0].g;
-  const expected=structuredClone(r);expected.players[1]='wqq';assert.deepEqual(linked.round,expected);
+  assert.deepEqual(linked.round,r);
   await assert.rejects(()=>db.query('select public.golf_mutate($1,$2,$3,$4)',[g.id,linked.revision,'slot',{value:2}]),/변경할 수 없습니다/);
  } finally {await db.close();}
 });
