@@ -91,11 +91,14 @@ export class SharedGames {
   }
   async create(round, name) {
     validateRound(round);
-    if (round.players.length !== 4)
+    if ((round.mode === "hussein" || round.sharedSlots === true) && round.players.length !== 4)
       throw Error("공동 게임은 4명으로 설정하세요.");
+    const payload = structuredClone(round);
+    if (payload.mode === "hussein" || payload.sharedSlots === true) { payload.sharedSlots = true; payload.slotPolicyVersion = 1; }
+    else delete payload.slotPolicyVersion;
     await this.identity();
     return this.watch(
-      await this.rpc("golf_create", { p_round: round, p_name: name }),
+      await this.rpc("golf_create", { p_round: payload, p_name: name }),
     );
   }
   async join(code, name) {
@@ -195,6 +198,7 @@ export class SharedGames {
     }
   }
   async claimSlot(slot) {
+    if (this.game?.round.slotPolicyVersion !== 1) throw Error("기존 게임은 선수 연결을 사용하지 않습니다.");
     const me = this.members.find(m => m.user_id === this.userId);
     if (!me) throw Error("참가자만 슬롯을 연결할 수 있습니다.");
     if (me.slot != null) throw Error("선수 슬롯은 변경할 수 없습니다.");

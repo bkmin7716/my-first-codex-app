@@ -19,7 +19,13 @@ async function snapshot(){await db.exec('reset role');return JSON.stringify((awa
 (select jsonb_agg(to_jsonb(g) order by id) from public.golf_games g) games,
 (select jsonb_agg(to_jsonb(m) order by game_id,user_id) from public.golf_members m) members,
 (select jsonb_agg(to_jsonb(a) order by id) from public.golf_audit a) audit`)).rows);}
-function rosterRound(){const r=createRound('hussein');r.sharedSlots=true;r.players=['민수','영희','철수','수진'];r.initial=[3,1,0,2];r.holes[0].par=3;return r;}
+function rosterRound(){const r=createRound('hussein');r.sharedSlots=true;r.slotPolicyVersion=1;r.players=['민수','영희','철수','수진'];r.initial=[3,1,0,2];r.holes[0].par=3;return r;}
+async function legacyGame(r){
+ await db.exec('reset role');
+ const g=(await db.query('insert into public.golf_games(owner_id,round) values($1,$2) returning *',[users[0],r])).rows[0];
+ await db.query('insert into public.golf_members(game_id,user_id,name) values($1,$2,$3)',[g.id,users[0],'생성자']);
+ return g;
+}
 async function connectAll(g){for(let i=1;i<4;i++)g=await rpc(i,'golf_join',[g.code,`계정${i}`]);for(let i=0;i<4;i++)g=await mutate(i,g,'slot',{value:[3,1,2,0][i]});return g;}
 
 test('owner roster preserved at create/join/claim; reconnect identity; competing claim is atomic',async()=>{
@@ -108,14 +114,22 @@ test('upgrade preserves all existing rows, membership slots and grants; unique i
 test.after(()=>db.close());
 
 test('legacy Hussein sharedSlots missing/null preserves member gameplay without slot requirement',async()=>{
- for(const flag of ['missing','null']) {
-  const r=createRound('hussein');if(flag==='null')r.sharedSlots=null;
-  let g=await rpc(0,'golf_create',[r,'생성자']);g=await rpc(1,'golf_join',[g.code,'참가자']);
+ for(const flag of ['missing','null','true']) {
+  const r=createRound('hussein');if(flag==='null')r.sharedSlots=null;if(flag==='true')r.sharedSlots=true;
+  let g=await legacyGame(r);g=await rpc(1,'golf_join',[g.code,'참가자']);
   assert.deepEqual(g.round,r);
   await assert.rejects(()=>mutate(1,g,'slot',{value:1}),/허용한 공동 게임/);
   for(let p=0;p<4;p++)g=await mutate(1,g,'score',{hole:0,player:p,value:4});
   g=await mutate(1,g,'lock',{hole:0,value:true});assert.deepEqual(g.locked_holes,[0]);
   assert.equal((await as(0,'select count(slot)::int n from public.golf_members where game_id=$1',[g.id])).rows[0].n,0);
+  g=await mutate(0,g,'lock',{hole:0,value:false});
+  g=await mutate(1,g,'near',{hole:2,value:1});g=await mutate(0,g,'paid',{hole:0,value:[1,2,3,4]});
+  g=await mutate(0,g,'settled',{player:1,value:100});g=await mutate(0,g,'cash',{value:[{type:'collect',amount:100}]});g=await mutate(0,g,'rate',{value:200000});
+  g=await rpc(1,'golf_join',[g.code,'재접속']);
+  for(let h=0;h<18;h++){for(let p=0;p<4;p++)g=await mutate(1,g,'score',{hole:h,player:p,value:4});g=await mutate(1,g,'lock',{hole:h,value:true});}
+  g=await mutate(0,g,'finalize',{value:true});assert.equal(g.finalized,true);
+  g=await rpc(1,'golf_join',[g.code,'재접속']);assert.equal(g.finalized,true);
+  g=await mutate(0,g,'finalize',{value:false});assert.equal(g.finalized,false);
  }
 });
 
@@ -144,6 +158,14 @@ test('shared roster duplicate names rejected on create and owner rename, legacy 
  const before=await snapshot();await assert.rejects(()=>rpc(0,'golf_create',[{...rosterRound(),players},'계정']),/중복/);assert.equal(await snapshot(),before);}
  let g=await rpc(0,'golf_create',[rosterRound(),'생성자']);g=await mutate(0,g,'slot',{value:0});
  const before=await snapshot();await assert.rejects(()=>mutate(0,g,'player_name',{player:1,value:'민수'}),/중복/);assert.equal(await snapshot(),before);
- const r=rosterRound();r.sharedSlots=null;r.players=['A','A','C','D'];
- const legacy=await rpc(0,'golf_create',[r,'생성자']);assert.deepEqual(legacy.round,r);
+ const r=rosterRound();r.sharedSlots=null;delete r.slotPolicyVersion;r.players=['A','A','C','D'];
+ const legacy=await legacyGame(r);assert.deepEqual(legacy.round,r);
+});
+
+
+test('server stamps policy only on new shared creation and version cannot be changed via mutate',async()=>{
+ const r=createRound('hussein');r.sharedSlots=true;const input=structuredClone(r);
+ let g=await rpc(0,'golf_create',[r,'생성자']);assert.equal(g.round.slotPolicyVersion,1);assert.deepEqual(r,input);
+ const before=await snapshot();await assert.rejects(()=>mutate(0,g,'slotPolicyVersion',{value:1}),/지원하지/);assert.equal(await snapshot(),before);
+ const normal=await rpc(0,'golf_create',[createRound('normal',2),'생성자']);assert.equal(normal.round.slotPolicyVersion,undefined);
 });

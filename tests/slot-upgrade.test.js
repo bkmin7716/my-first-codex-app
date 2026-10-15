@@ -4,29 +4,46 @@ import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 import {createRound} from '../engine.js';
 
-test('legacy slot RPC P0001 reproduction and non-destructive upgrade', async () => {
+test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by repeated versioned migration',async()=>{
  const db=new PGlite();
  try {
-  await db.exec(`create role anon; create role authenticated; create schema auth;
-   create table auth.users(id uuid primary key);
-   create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
-   grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated;
-   create publication supabase_realtime;`);
+  await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);
+  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+  grant usage on schema auth to authenticated;grant execute on function auth.uid() to authenticated;create publication supabase_realtime;`);
   await db.exec(readFileSync(new URL('./fixtures/legacy-schema.sql',import.meta.url),'utf8'));
-  const uid='00000000-0000-4000-8000-000000000001';
-  await db.query('insert into auth.users values ($1)',[uid]);
-  await db.query("select set_config('request.jwt.claim.sub',$1,false)",[uid]);
-  await db.exec('set role authenticated');
-  const r=createRound('hussein');r.sharedSlots=true;r.holes[0].scores=[3,4,5,6];r.holes[0].paid=[1,2,3,4];r.settled=[10,20,30,40];
-  const g=(await db.query('select to_jsonb(public.golf_create($1,$2)) g',[r,'wqq'])).rows[0].g;
-  await assert.rejects(()=>db.query('select public.golf_mutate($1,$2,$3,$4)',[g.id,g.revision,'slot',{value:1}]), e=>e.code==='P0001' && /지원하지 않는 변경/.test(e.message));
+  // Production already has the nullable column and its unique index.
+  await db.exec('alter table public.golf_members add column slot integer check(slot between 0 and 3);create unique index golf_members_game_slot_unique on public.golf_members(game_id,slot)');
+  const ids=['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000002'];
+  for(const id of ids)await db.query('insert into auth.users values($1)',[id]);
+  async function rpc(i,name,args){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[i]]);await db.exec('set role authenticated');return (await db.query(`select to_jsonb(public.${name}(${args.map((_,i)=>'$'+(i+1)).join(',')})) g`,args)).rows[0].g;}
+  const games=[];
+  for(let i=0;i<8;i++){
+   const r=createRound('hussein');r.sharedSlots=i<5?true:null;r.holes[0].par=3;r.holes[0].paid=[1,2,3,4];r.settled=[10,20,30,40];
+   let g=await rpc(0,'golf_create',[r,'생성자']);if(i<5)g=await rpc(1,'golf_join',[g.code,'참가자']);games.push(g);
+  }
+  for(let i=0;i<17;i++){const g=games[0];games[0]=await rpc(0,'golf_mutate',[g.id,g.revision,'score',{hole:0,player:i%4,value:4}]);}
   await db.exec('reset role');
+  const snapshot=async()=>(await db.query(`select
+   (select jsonb_agg(to_jsonb(g) order by id) from public.golf_games g) games,
+   (select jsonb_agg(to_jsonb(m) order by game_id,user_id) from public.golf_members m) members,
+   (select jsonb_agg(to_jsonb(a) order by id) from public.golf_audit a) audit`)).rows[0];
+  const before=await snapshot();assert.equal(before.games.length,8);assert.equal(before.members.length,13);assert.equal(before.audit.length,30);
+  assert.equal(before.games.filter(g=>g.round.sharedSlots===true).length,5);assert.ok(before.members.every(m=>m.slot===null));
+  const metadata=async()=>(await db.query(`select (select jsonb_agg(jsonb_build_array(oid,proowner,proacl) order by oid) from pg_proc where proname in ('golf_validate','golf_create','golf_join','golf_mutate')) funcs,
+   (select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p where schemaname='public') policies`)).rows[0];
+  const meta=await metadata();
   const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8');
   await db.exec(migration);await db.exec(migration);
-  assert.deepEqual((await db.query('select round from public.golf_games where id=$1',[g.id])).rows[0].round,r);
-  await db.exec('set role authenticated');
-  const linked=(await db.query('select to_jsonb(public.golf_mutate($1,$2,$3,$4)) g',[g.id,g.revision,'slot',{value:1}])).rows[0].g;
-  assert.deepEqual(linked.round,r);
-  await assert.rejects(()=>db.query('select public.golf_mutate($1,$2,$3,$4)',[g.id,linked.revision,'slot',{value:2}]),/변경할 수 없습니다/);
- } finally {await db.close();}
+  assert.deepEqual(await snapshot(),before);assert.deepEqual(await metadata(),meta);
+  assert.equal((await db.query("select count(*)::int n from pg_indexes where schemaname='public' and indexname='golf_member_slot'")).rows[0].n,0);
+  await db.exec(readFileSync(new URL('../supabase/001-player-slots-precheck.sql',import.meta.url),'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/001-player-slots-postcheck.sql',import.meta.url),'utf8'));
+  assert.deepEqual(await snapshot(),before);
+  let g=games[0];g=await rpc(1,'golf_join',[g.code,'재접속']);assert.equal(g.revision,games[0].revision);
+  await assert.rejects(()=>rpc(1,'golf_mutate',[g.id,g.revision,'slot',{value:1}]),/허용한 공동 게임/);
+  g=await rpc(1,'golf_mutate',[g.id,g.revision,'near',{hole:0,value:1}]);
+  g=await rpc(1,'golf_mutate',[g.id,g.revision,'lock',{hole:0,value:true}]);assert.deepEqual(g.locked_holes,[0]);
+  await db.exec('reset role');assert.equal((await db.query('select count(slot)::int n from public.golf_members')).rows[0].n,0);
+  const fresh=await rpc(0,'golf_create',[createRound('hussein'),'생성자']);assert.equal(fresh.round.slotPolicyVersion,1);
+ }finally{await db.close();}
 });

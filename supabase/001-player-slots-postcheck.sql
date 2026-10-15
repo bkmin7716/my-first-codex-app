@@ -1,3 +1,9 @@
+-- Baseline: games=8, members=13, audits=30; all existing games have no policy version.
+select count(*) games,count(*) filter(where round->'sharedSlots'='true'::jsonb) old_shared_flag_true,
+count(*) filter(where round->'slotPolicyVersion'='1'::jsonb) policy_v1_games from public.golf_games;
+select count(*) members,count(slot) connected,count(*) filter(where slot is null) unconnected from public.golf_members;
+select schemaname,tablename,policyname,permissive,roles,cmd,qual,with_check from pg_policies where schemaname='public' and tablename in ('golf_games','golf_members','golf_audit') order by tablename,policyname;
+select relname,relrowsecurity,relforcerowsecurity from pg_class where oid in ('public.golf_games'::regclass,'public.golf_members'::regclass,'public.golf_audit'::regclass) order by relname;
 -- Run before and after, with app writes paused. Save results (baseline 8 / 13 / 30).
 select 'games' dataset,count(*) rows,md5(coalesce(string_agg(to_jsonb(g)::text,E'\n' order by id),'')) fingerprint from public.golf_games g
 union all select 'members',count(*),md5(coalesce(string_agg(to_jsonb(m)::text,E'\n' order by game_id,user_id),'')) from public.golf_members m

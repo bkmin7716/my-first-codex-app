@@ -1,5 +1,12 @@
-# 슬롯 연결 오류와 최종 정책
+# 슬롯 오류와 정책 버전 분리
 
-운영 함수에 slot 분기가 없다는 사용자의 조회 결과로 이전 P0001 원인이 확인되었습니다. 최신 정책은 골프 선수 이름과 계정 표시 이름을 분리합니다. 프런트엔드는 golf_mutate에 p_action='slot', p_detail={"value":0}을 전송합니다. 생성자도 직접 선택합니다. slot 작업은 회원의 slot만 변경하고 round.players를 변경하지 않습니다.
+이전 P0001 오류는 운영 golf_mutate에 slot 작업 분기가 없었던 문제입니다. 기존 게임 5개에도 sharedSlots=true가 이미 있으므로 그 플래그로 새 정책 여부를 판단하면 기존 참가자 13명에게 새 연결을 강제하게 됩니다.
 
-적용 전에는 001-player-slots-precheck.sql, 실제 적용에는 001-player-slots.sql, 적용 후에는 001-player-slots-postcheck.sql을 사용하세요. UPGRADE.md에 전환 순서와 RPC 계약이 있습니다. 기존 schema.sql은 재실행하지 않습니다.
+최종 정책은 JSON 숫자 round.slotPolicyVersion=1인 게임에만 적용합니다. golf_create가 새 공동 게임 생성 시에만 버전을 추가하고 기존 행은 변경하지 않습니다. 프런트엔드와 RPC 모두 버전 기준으로 판정합니다. 기존 sharedSlots=true/null 게임은 슬롯 연결 없이 점수·Near·잠금·정산·재접속·최종 확정을 유지합니다.
+
+사전 점검: 001-player-slots-precheck.sql
+실제 적용: 001-player-slots.sql
+사후 점검: 001-player-slots-postcheck.sql
+상세 순서: UPGRADE.md
+
+운영 DB에는 SQL을 직접 실행하지 않습니다. GitHub push와 Pages 배포는 운영 DB 마이그레이션을 대신하지 않습니다.

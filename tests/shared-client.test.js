@@ -109,7 +109,10 @@ test("공동 클라이언트: 익명 인증·RPC 생성·실시간 수신·최�
       (s) => statuses.push(s),
     );
   try {
-    await api.create(createRound("hussein"), "이름");
+    const input=createRound("hussein");
+    await api.create(input, "이름");
+    assert.equal(f.calls[0].args.p_round.slotPolicyVersion,1);
+    assert.equal(input.slotPolicyVersion,undefined);
     assert.equal(api.userId, "owner");
     assert.equal(f.calls[0].name, "golf_create");
     assert.ok(statuses.includes("실시간 연결됨"));
@@ -252,7 +255,7 @@ test("persisted anonymous identity is reused and mismatched verified identity is
 
 test("슬롯 연결은 지원 RPC payload를 사용하고 재연결·점유 슬롯을 차단", async () => {
   const f = fixture(), api = new SharedGames(f.client);
-  api.game = f.row; api.userId = "owner";
+  api.game = {...f.row,round:{...f.row.round,slotPolicyVersion:1}}; api.userId = "owner";
   api.members = [{user_id:"owner",slot:0}];
   await assert.rejects(() => api.claimSlot(1), /변경할 수 없습니다/);
   api.members = [{user_id:"owner",slot:null},{user_id:"other",slot:1}];
@@ -261,4 +264,11 @@ test("슬롯 연결은 지원 RPC payload를 사용하고 재연결·점유 슬�
   assert.equal(f.calls.length, 0);
   await api.claimSlot(2);
   assert.deepEqual(f.calls[0], {name:"golf_mutate",args:{p_game:"game",p_revision:0,p_action:"slot",p_detail:{value:2}}});
+});
+
+
+test("opening old sharedSlots=true game never opts it into player selection",async()=>{
+ const f=fixture();f.setRow({...f.row,round:{...f.row.round,sharedSlots:true}});
+ const api=new SharedGames(f.client);
+ try {await api.open("game");assert.equal(api.game.round.slotPolicyVersion,undefined);await assert.rejects(()=>api.claimSlot(0),/기존 게임/);assert.equal(f.calls.length,0);}finally{api.stop();}
 });

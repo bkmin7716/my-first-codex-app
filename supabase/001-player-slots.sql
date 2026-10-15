@@ -22,13 +22,15 @@ create or replace function public.golf_validate(r jsonb) returns void language p
 declare h jsonb; v jsonb; n integer;
 begin
  if r is null or jsonb_typeof(r)<>'object' or coalesce(r->>'mode','') not in ('normal','hussein') then raise exception '게임 종류 오류'; end if;
+ if r ? 'slotPolicyVersion' and r->'slotPolicyVersion'<>'null'::jsonb and r->'slotPolicyVersion'<>'1'::jsonb then raise exception '지원하지 않는 선수 정책 버전입니다'; end if;
+ if r->'slotPolicyVersion'='1'::jsonb and r->'sharedSlots' is distinct from 'true'::jsonb then raise exception '공동 선수 정책 설정 오류'; end if;
  if jsonb_typeof(r->'players') is distinct from 'array' or jsonb_typeof(r->'holes') is distinct from 'array' then raise exception '라운드 형식 오류'; end if;
  n:=jsonb_array_length(r->'players');
- if n not between 1 and 4 or (r->'sharedSlots'='true'::jsonb and n<>4) or (r->>'mode'='hussein' and n<>4) or jsonb_array_length(r->'holes')<>18 then raise exception '일반 게임은 1~4명, 후세인은 4명·18홀입니다'; end if;
+ if n not between 1 and 4 or (r->'slotPolicyVersion'='1'::jsonb and n<>4) or (r->>'mode'='hussein' and n<>4) or jsonb_array_length(r->'holes')<>18 then raise exception '일반 게임은 1~4명, 후세인은 4명·18홀입니다'; end if;
  for v in select value from jsonb_array_elements(r->'players') loop
   if jsonb_typeof(v) is distinct from 'string' or length(trim(v#>>'{}')) not between 1 and 40 then raise exception '선수 이름 오류'; end if;
  end loop;
- if r->'sharedSlots'='true'::jsonb and (select count(distinct btrim(value)) from jsonb_array_elements_text(r->'players'))<>n then raise exception '공동 게임의 선수 이름은 중복될 수 없습니다'; end if;
+ if r->'slotPolicyVersion'='1'::jsonb and (select count(distinct btrim(value)) from jsonb_array_elements_text(r->'players'))<>n then raise exception '공동 게임의 선수 이름은 중복될 수 없습니다'; end if;
  if coalesce(r->>'payment','') not in ('pre','post') or jsonb_typeof(r->'rate') is distinct from 'number' or coalesce(r->>'rate','') !~ '^[0-9]+$' then raise exception '정산 설정 오류'; end if;
  if (r->>'rate')::numeric not between 1 and 10000000 then raise exception '단가 오류'; end if;
  if jsonb_typeof(r->'initial') is distinct from 'array' then raise exception '초기 순위 오류'; end if;
@@ -48,7 +50,7 @@ begin
    if jsonb_typeof(h->'paid') is distinct from 'array' then raise exception '지급 형식 오류'; end if;
    if jsonb_array_length(h->'paid')<>n then raise exception '지급 개수 오류'; end if;
    for v in select value from jsonb_array_elements(h->'paid') loop
-    if (r->'sharedSlots'='true'::jsonb and jsonb_typeof(v) is distinct from 'number') or coalesce(v#>>'{}','') !~ '^[0-9]+$' then raise exception '지급 금액 오류'; end if;
+    if (r->'slotPolicyVersion'='1'::jsonb and jsonb_typeof(v) is distinct from 'number') or coalesce(v#>>'{}','') !~ '^[0-9]+$' then raise exception '지급 금액 오류'; end if;
     if (v#>>'{}')::numeric>10000000000 then raise exception '지급 금액 범위 오류'; end if;
    end loop;
   end if;
@@ -57,12 +59,12 @@ begin
  if jsonb_array_length(r->'settled')<>n then raise exception '정산 개수 오류'; end if;
  for v in select value from jsonb_array_elements(r->'settled') loop
   if v<>'null'::jsonb then
-   if (r->'sharedSlots'='true'::jsonb and jsonb_typeof(v) is distinct from 'number') or coalesce(v#>>'{}','') !~ '^-?[0-9]+$' then raise exception '정산 금액 오류'; end if;
+   if (r->'slotPolicyVersion'='1'::jsonb and jsonb_typeof(v) is distinct from 'number') or coalesce(v#>>'{}','') !~ '^-?[0-9]+$' then raise exception '정산 금액 오류'; end if;
    if abs((v#>>'{}')::numeric)>10000000000 then raise exception '정산 범위 오류'; end if;
   end if;
  end loop;
  for v in select value from jsonb_array_elements(r->'cash') loop
-  if jsonb_typeof(v) is distinct from 'object' or (r->'sharedSlots'='true'::jsonb and jsonb_typeof(v->'amount') is distinct from 'number') or coalesce(v->>'type','') not in ('collect','refund') or coalesce(v->>'amount','') !~ '^[0-9]+$' then raise exception '거래 오류'; end if;
+  if jsonb_typeof(v) is distinct from 'object' or (r->'slotPolicyVersion'='1'::jsonb and jsonb_typeof(v->'amount') is distinct from 'number') or coalesce(v->>'type','') not in ('collect','refund') or coalesce(v->>'amount','') !~ '^[0-9]+$' then raise exception '거래 오류'; end if;
   if (v->>'amount')::numeric not between 1 and 10000000000 then raise exception '거래 범위 오류'; end if;
  end loop;
 
@@ -77,6 +79,12 @@ begin
  if octet_length(p_round::text)>100000 then raise exception '라운드 크기 초과'; end if;
  if jsonb_typeof(p_round->'players') is distinct from 'array' then raise exception '선수 배열 오류'; end if;
  if jsonb_array_length(p_round->'players') not between 1 and 4 then raise exception '선수 인원 오류'; end if;
+ -- Stamp only the newly inserted game; never update an existing game.
+ if p_round->>'mode'='hussein' or p_round->'sharedSlots'='true'::jsonb then
+  p_round:=p_round||jsonb_build_object('sharedSlots',true,'slotPolicyVersion',1);
+ else
+  p_round:=p_round-'slotPolicyVersion';
+ end if;
  perform public.golf_validate(p_round);
  insert into public.golf_games(owner_id,round) values(auth.uid(),p_round) returning * into g;
  insert into public.golf_members(game_id,user_id,name,slot) values(g.id,auth.uid(),trim(p_name),null);
@@ -93,7 +101,7 @@ begin
  if not found then raise exception '참여 코드를 확인하세요'; end if;
  if exists(select 1 from public.golf_members where game_id=g.id and user_id=auth.uid()) then return g; end if;
  if g.finalized then raise exception '최종 확정된 게임입니다'; end if;
- if g.round->>'mode'='normal' and g.round->'sharedSlots' is distinct from 'true'::jsonb then raise exception '일반 게임은 생성자 혼자 관리합니다'; end if;
+ if g.round->>'mode'='normal' and g.round->'slotPolicyVersion' is distinct from '1'::jsonb then raise exception '일반 게임은 생성자 혼자 관리합니다'; end if;
  perform public.golf_validate(g.round);
  if (select count(*) from public.golf_members where game_id=g.id)>=jsonb_array_length(g.round->'players') then raise exception '참가 인원이 모두 찼습니다'; end if;
  insert into public.golf_members(game_id,user_id,name,slot) values(g.id,auth.uid(),trim(p_name),null);
@@ -112,7 +120,7 @@ begin
  if p_revision is null or g.revision<>p_revision then raise exception '다른 참가자가 수정했습니다. 최신 내용을 확인 후 다시 입력하세요'; end if;
  if jsonb_typeof(g.round->'players') is distinct from 'array' then raise exception '선수 배열 오류'; end if;
  n:=jsonb_array_length(g.round->'players');
- shared:=coalesce(g.round->'sharedSlots'='true'::jsonb,false);
+ shared:=coalesce(g.round->'slotPolicyVersion'='1'::jsonb,false);
  if g.round->>'mode'='normal' and not shared and auth.uid()<>g.owner_id and p_action<>'name' then raise exception '일반 게임은 생성자만 수정할 수 있습니다'; end if;
  if n not between 1 and 4 then raise exception '선수 인원 오류'; end if;
  if jsonb_typeof(p_detail) is distinct from 'object' then raise exception '요청 상세는 JSON 객체여야 합니다'; end if;
