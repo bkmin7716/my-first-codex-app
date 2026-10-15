@@ -285,8 +285,7 @@ begin
   before_value:=to_jsonb(g.finalized); g.finalized:=(p_detail->>'value')::boolean; after_value:=to_jsonb(g.finalized);
  else
   if g.finalized then raise exception '최종 확정 잠금 상태입니다'; end if;
-  if shared and p_action in ('score','near','lock') and not exists(select 1 from public.golf_members where game_id=g.id and user_id=auth.uid() and slot is not null) then raise exception '본인 선수를 먼저 선택하세요'; end if;
-  if p_action in ('score','near','lock','paid') then
+   if p_action in ('score','near','lock','paid') then
    if jsonb_typeof(p_detail->'hole') is distinct from 'number' or coalesce(p_detail->>'hole','') !~ '^([0-9]|1[0-7])$' then raise exception '홀 번호 오류'; end if;
    h:=(p_detail->>'hole')::integer;
    if h is null or h not between 0 and 17 then raise exception '홀 번호 오류'; end if;
@@ -301,15 +300,13 @@ begin
     target:=(p_detail->>'value')::integer;
    end if;
    if target is not null then
-    if target not between 0 and n-1 or not exists(select 1 from public.golf_members where game_id=g.id and slot=target and length(trim(name)) between 1 and 40) or length(trim(g.round->'players'->>target)) not between 1 and 40 then raise exception '이름과 사용자 연결을 먼저 완료하세요'; end if;
+    if target not between 0 and n-1 or length(trim(g.round->'players'->>target)) not between 1 and 40 then raise exception '등록된 선수 이름을 확인하세요'; end if;
    end if;
-   if p_action='paid' and p_detail->'value'<>'null'::jsonb and (select count(distinct slot) from public.golf_members where game_id=g.id and slot between 0 and n-1)<>n then raise exception '지급 기록 전 선수 연결을 완료하세요'; end if;
   end if;
   if p_action='lock' then
    if jsonb_typeof(p_detail->'value') is distinct from 'boolean' then raise exception '잠금 값 오류'; end if;
    before_value:=to_jsonb(h=any(g.locked_holes));
    if (p_detail->>'value')::boolean then
-    if shared and (select count(distinct slot) from public.golf_members where game_id=g.id and slot between 0 and n-1)<>n then raise exception '모든 선수 슬롯과 초기 순위를 확정하세요'; end if;
     if h=0 and g.round->>'mode'='hussein' then
      if jsonb_typeof(g.round->'initial') is distinct from 'array' then raise exception '초기 순위 오류'; end if;
      if jsonb_array_length(g.round->'initial')<>4 or (select count(distinct value) from jsonb_array_elements(g.round->'initial') where value in ('0'::jsonb,'1'::jsonb,'2'::jsonb,'3'::jsonb))<>4 then raise exception '초기 순위 오류'; end if;
