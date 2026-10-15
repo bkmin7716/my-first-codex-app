@@ -93,7 +93,7 @@ export class SharedGames {
     validateRound(round);
     if ((round.mode === "hussein" || round.sharedSlots === true) && round.players.length !== 4)
       throw Error("공동 게임은 4명으로 설정하세요.");
-    const payload = structuredClone(round);
+    const payload = {...structuredClone(round), gamePolicyVersion: 1};
     if (payload.mode === "hussein" || payload.sharedSlots === true) { payload.sharedSlots = true; payload.slotPolicyVersion = 1; }
     else delete payload.slotPolicyVersion;
     await this.identity();

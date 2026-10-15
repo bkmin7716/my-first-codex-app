@@ -1,6 +1,8 @@
 -- Baseline: games=8, members=13, audits=30; all existing games have no policy version.
 select count(*) games,count(*) filter(where round->'sharedSlots'='true'::jsonb) old_shared_flag_true,
-count(*) filter(where round->'slotPolicyVersion'='1'::jsonb) policy_v1_games from public.golf_games;
+count(*) filter(where round->'slotPolicyVersion'='1'::jsonb) slot_policy_v1_games,
+count(*) filter(where round->'gamePolicyVersion'='1'::jsonb) game_policy_v1_games,
+count(*) filter(where coalesce(round->'slotPolicyVersion','null'::jsonb)='null'::jsonb and coalesce(round->'gamePolicyVersion','null'::jsonb)='null'::jsonb) legacy_games from public.golf_games;
 select count(*) members,count(slot) connected,count(*) filter(where slot is null) unconnected from public.golf_members;
 select schemaname,tablename,policyname,permissive,roles,cmd,qual,with_check from pg_policies where schemaname='public' and tablename in ('golf_games','golf_members','golf_audit') order by tablename,policyname;
 select relname,relrowsecurity,relforcerowsecurity from pg_class where oid in ('public.golf_games'::regclass,'public.golf_members'::regclass,'public.golf_audit'::regclass) order by relname;

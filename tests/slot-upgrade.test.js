@@ -40,7 +40,7 @@ test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by 
   await db.exec(readFileSync(new URL('../supabase/001-player-slots-postcheck.sql',import.meta.url),'utf8'));
   assert.deepEqual(await snapshot(),before);
   let g=games[0];g=await rpc(1,'golf_join',[g.code,'재접속']);assert.equal(g.revision,games[0].revision);
-  await assert.rejects(()=>rpc(1,'golf_mutate',[g.id,g.revision,'slot',{value:1}]),/허용한 공동 게임/);
+  await assert.rejects(()=>rpc(1,'golf_mutate',[g.id,g.revision,'slot',{value:1}]),/생성자/);
   g=await rpc(1,'golf_mutate',[g.id,g.revision,'near',{hole:0,value:1}]);
   g=await rpc(1,'golf_mutate',[g.id,g.revision,'lock',{hole:0,value:true}]);assert.deepEqual(g.locked_holes,[0]);
   await db.exec('reset role');assert.equal((await db.query('select count(slot)::int n from public.golf_members')).rows[0].n,0);

@@ -76,3 +76,5 @@ JSON 백업을 정기적으로 내려받으세요. 복원은 검증 및 확인 �
 새 파일: `shared.js`(Supabase 연결·동기화), `shared-ui.js`(공동 플레이 화면), `shared-config.js`(공개 설정), `supabase/schema.sql`(서버 데이터·권한·변경 RPC), `tests/shared-*.test.js`(공동 기능 검증).
 
 정책 버전 안내: 새 공동 게임은 `slotPolicyVersion: 1`을 서버에서 저장합니다. 기존 게임은 `sharedSlots: true`여도 버전이 없으면 선수 연결 없이 기존 입력·잠금·정산을 유지합니다. 운영 적용 전후 점검과 SQL 실행 순서는 `supabase/UPGRADE.md`를 확인하세요.
+
+기존 일반 게임의 권한도 보존합니다. 새 일반 게임만 `gamePolicyVersion: 1`로 단독 관리 정책을 적용하며, `tests/legacy-contract.test.js`가 원본 SQL과 변경 SQL에 273개 동일 요청을 보내 결과·오류·상태를 비교합니다.

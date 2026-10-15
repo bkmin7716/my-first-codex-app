@@ -199,6 +199,7 @@ try {
   const round = createRound("hussein");
   round.sharedSlots = true;
   round.slotPolicyVersion = 1;
+  round.gamePolicyVersion = 1;
   round.course = "공동 테스트";
   round.holes[0].par = 3;
   round.holes[0].scores = [3,4,6,7];

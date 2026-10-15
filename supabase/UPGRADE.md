@@ -2,15 +2,15 @@
 
 ## 판정 기준
 
-- **새 공동 게임:** `round.slotPolicyVersion`이 JSON 숫자 `1`인 경우에만 선수 선택 정책을 적용합니다. 새 공동 게임은 `golf_create`가 INSERT 전에 `sharedSlots:true`, `slotPolicyVersion:1`을 기록합니다. 기존 게임의 복사본을 새로 만드는 경우에도 새 ID에만 버전을 부여합니다.
-- **기존 게임:** 버전이 없거나 JSON null이면 기존 방식입니다. `sharedSlots:true`여도 슬롯 연결을 강제하지 않습니다. 기존 8개 게임, 13개 참가 기록, 30개 감사 기록 및 모든 round·locked_holes·finalized·revision은 마이그레이션에서 변경하지 않습니다.
-- **일반 게임:** 새 비공동 normal 게임은 버전 없이 생성하며 생성자가 혼자 1~4명의 점수와 잠금을 관리합니다. 후세인은 4명을 유지합니다.
+- **새 공동 게임:** `round.slotPolicyVersion`이 JSON 숫자 `1`인 경우에만 선수 선택 정책을 적용합니다. 새 공동 게임은 `golf_create`가 INSERT 전에 `gamePolicyVersion:1`, `sharedSlots:true`, `slotPolicyVersion:1`을 기록합니다. 기존 게임의 복사본을 새로 만드는 경우에도 새 ID에만 버전을 부여합니다.
+- **기존 게임:** slotPolicyVersion과 gamePolicyVersion이 모두 없거나 JSON null이면 원본 SQL 처리 분기로 실행합니다. `sharedSlots:true`여도 슬롯 연결을 강제하지 않습니다. 기존 8개 게임, 13개 참가 기록, 30개 감사 기록 및 모든 round·locked_holes·finalized·revision은 마이그레이션에서 변경하지 않습니다.
+- **일반 게임:** 새 비공동 normal 게임은 `gamePolicyVersion:1`만 저장하며 생성자가 혼자 1~4명의 점수와 잠금을 관리합니다. 후세인은 4명을 유지합니다.
 - 알려지지 않은 정책 버전은 검증에서 거부하며, mutate로 기존 게임의 정책 버전을 변경할 수 없습니다. 기존 게임 자동 전환 SQL은 없습니다.
 
 ## 적용 순서
 
 1. 운영 백업과 기존 함수 정의를 확보하고 앱 입력을 잠시 중단합니다.
-2. `001-player-slots-precheck.sql`을 실행합니다. 읽기 전용이며 설치된 함수·데이터를 바꾸지 않습니다. 기존 기준은 게임 8개(이전 sharedSlots true 5개/null 3개), 참가자 13명(slot null 13개), 감사 기록 30개, 정책 버전 1 게임 0개입니다. 행 수·내용 지문·함수 소유자·권한·RLS 정책을 저장합니다. 후보 검증 FAIL은 자동으로 수정하지 않습니다.
+2. `001-player-slots-precheck.sql`을 실행합니다. 읽기 전용이며 설치된 함수·데이터를 바꾸지 않습니다. 기존 기준은 게임 8개(이전 sharedSlots true 5개/null 3개), 참가자 13명(slot null 13개), 감사 기록 30개, 정책 버전 1 게임 0개입니다. 행 수·내용 지문·함수 소유자·권한·RLS 정책을 저장합니다. 후보 검증 FAIL은 자동으로 수정하지 않습니다. 설치된 함수 본문과 저장소의 tests/fixtures/legacy-schema.sql 원본 기준 해시도 비교합니다. reference_body_matches=false이면 단순 주석 차이인지 실제 운영 전용 변경인지 정의를 검토한 뒤 적용합니다.
 3. 사용자 확인 후 `001-player-slots.sql` 전체를 실행합니다. nullable slot과 기존 인덱스를 확인하고 네 함수를 교체합니다. CREATE OR REPLACE는 기존 함수 소유자·권한을 유지합니다. 기존 테이블·RLS 정책을 교체하거나 기존 행을 업데이트하지 않습니다. 새 프로젝트는 schema.sql 설치 후에도 이 마이그레이션을 적용할 수 있습니다.
 4. `001-player-slots-postcheck.sql`을 실행하여 기존 행 수·내용 지문·권한·RLS가 동일한지 확인합니다. 실제 입력이 재개되기 전에 비교합니다.
 5. 수정된 프런트엔드를 배포합니다. SQL과 앱의 버전 판정 기준은 `slotPolicyVersion===1`로 일치합니다. SQL을 먼저 적용해 새 게임 응답에 버전이 포함되도록 합니다. GitHub main push는 기존 workflow에 따라 Pages 배포를 시작하지만 Supabase SQL을 실행하지 않습니다. SQL 미적용 상태에서는 새 흐름이 정상 작동한다고 간주하지 않습니다.
@@ -32,3 +32,11 @@
 ## 검증 범위
 
 PostgreSQL 테스트는 PGlite에서 실행합니다. 운영과 같은 8게임/13회원/30감사, true 5개/null 3개 fixture로 마이그레이션 반복 적용 전후 모든 행·함수 ACL·소유자·RLS 정책 보존을 검사합니다. 새 게임의 생성·연결·권한·중복 선택, 기존 true/null 게임의 연결 없는 입력·잠금·정산·최종 확정을 회귀 검사합니다. 모바일 Chromium은 실제 UI+테스트 Auth/Realtime 어댑터로 실행하며 운영 Supabase에 접속하지 않습니다. 실제 iPhone/Auth/Realtime 검증은 적용 후 별도로 수행해야 합니다.
+
+## 기존 동작의 정확한 분리
+
+버전 없는 게임의 golf_validate/golf_join/golf_mutate는 저장소 원본 legacy-schema.sql의 처리 분기를 유지합니다. 기존 일반 게임에도 다른 참가자의 참여·점수·Near·홀 잠금을 허용했던 원본 권한을 그대로 적용합니다. 인원 상한 4명, 재참여 시 이름 검사보다 먼저 반환, 형변환·오류 메시지, 잠금·단가·지급·정산·감사 기록 처리 순서도 보존합니다. 마이그레이션은 실제 운영 데이터에 어떤 버전도 채우지 않습니다.
+
+기존 게임에서는 name/player_name/initial/slot을 새로 허용하지 않습니다. 원본 함수처럼 생성자/참가자에 따라 미지원 작업 또는 권한 오류를 반환하며 화면에서도 새 명단 수정 기능을 숨깁니다. 초기 순위 입력·수정과 슬롯 선택은 새 공동 게임에만 허용합니다. 선수 이름/계정 표시 이름 수정은 버전이 있는 새 게임에서만 제공합니다. 새 일반 게임의 단독 관리 제한은 gamePolicyVersion=1인 게임에만 적용합니다.
+
+원본 함수와 변경 함수를 별도 PostgreSQL 인스턴스에서 실행하는 legacy-contract.test.js가 273개 동일 요청의 응답·SQLSTATE·오류 문구·각 요청 후 상태를 비교합니다. normal/Hussein, sharedSlots 누락/null/true, 미지원 새 액션, 정원·재참여·잘못된 입력·동시 revision·잠금·금액·최종 확정·재접속을 포함합니다. 서로 다른 DB의 자동 생성 시간 필드는 동작 비교에서 제외하지만, 8/13/30 마이그레이션 보존 테스트에서는 시간 필드를 포함한 모든 기존 행을 그대로 비교합니다. 이 검증은 저장소 원본 기준이며 실제 운영 함수 정의가 다른 경우 사전 점검 결과를 먼저 검토해야 합니다.
