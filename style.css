@@ -14,3 +14,24 @@
 .next-hussein p{margin-bottom:0}
 .score>div{min-width:0;overflow-wrap:anywhere}
 .shared-panel .score input{margin-bottom:0}
+
+
+/* Shared-play mobile layout: keep setup controls readable and tap-friendly. */
+.shared-panel{max-width:680px;padding-top:20px}
+.shared-panel h1{font-size:clamp(25px,6vw,34px);line-height:1.2;letter-spacing:-.7px}
+.shared-panel .card{padding:clamp(16px,4vw,22px)}
+.shared-panel label{font-size:15px;font-weight:650;line-height:1.45;margin-top:16px}
+.shared-panel input,.shared-panel select{min-height:52px;font-size:16px;margin-bottom:12px}
+.shared-panel button{min-height:48px;font-size:15px;line-height:1.35}
+.shared-panel .card>button[data-shared="create"],.shared-panel .card>button[data-shared="join"],.shared-panel .card>button[data-shared="claim"]{width:100%;margin-top:8px}
+.shared-panel .card>p{font-size:14px;line-height:1.6;color:#52675a}
+.shared-panel #shared-list .card{padding:16px}
+.shared-panel #shared-list .card>button{min-width:100px}
+.shared-panel .hole-grid button{min-height:44px;font-size:14px}
+.shared-panel .score input{font-size:23px}
+@media(max-width:480px){
+ .shared-panel{padding-left:16px;padding-right:16px}
+ .shared-panel .card{border-radius:16px;margin-bottom:16px}
+ .shared-panel .row{align-items:flex-start;flex-wrap:wrap}
+ .shared-panel .actions>button{min-width:0}
+}
