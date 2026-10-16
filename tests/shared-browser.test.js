@@ -236,7 +236,7 @@ try {
   for (const field of ["holes", "cash", "settled", "payment", "rate", "finished"]) {
     assert.deepEqual(saved.rows[0].round[field], round[field], `copy preserves ${field}`);
   }
-  assert.deepEqual(saved.rows[0].round.players, round.players);
+  assert.deepEqual(saved.rows[0].round.players, ["생성자", ...round.players.slice(1)]);
   assert.deepEqual(saved.rows[0].round.initial, round.initial);
   const code = (
     await pages[0].locator(".shared-panel .card strong").first().innerText()
