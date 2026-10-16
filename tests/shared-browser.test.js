@@ -14,6 +14,7 @@ await db.exec(`create role anon;create role authenticated;create schema auth;cre
 await db.exec(
   readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8"),
 );
+await db.exec(readFileSync(new URL("../supabase/003-roster-join.sql", import.meta.url), "utf8"));
 const users = Array.from(
   { length: 5 },
   (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
@@ -34,6 +35,8 @@ async function request(body) {
     const keys = {
       golf_create: ["p_round", "p_name"],
       golf_join: ["p_code", "p_name"],
+       golf_preview: ["p_code"],
+       golf_join_selected: ["p_code", "p_slot"],
       golf_mutate: ["p_game", "p_revision", "p_action", "p_detail"],
     }[body.rpc];
     if (!keys) throw Error("test rpc");
@@ -194,7 +197,7 @@ try {
     await p.goto(origin + basePath + "/");
     await p.getByRole("button", { name: i === 0 ? "새 공동 게임 생성" : "참여 코드로 참여", exact: true }).click();
     assert.match(await p.locator("#shared-checks").innerText(), /로그인: 미확인.*RPC: 미확인/);
-    await p.locator("#shared-name").fill(i === 0 ? "생성자" : `참가자${i}`);
+    if (i === 0) await p.locator("#shared-draft-player-0").fill("생성자");
   }
   const round = createRound("hussein");
   round.sharedSlots = true;
@@ -217,11 +220,11 @@ try {
   await pages[0].reload();
   await pages[0].getByRole("button", {name:"공동 게임으로 복사",exact:true}).click();
   assert.equal(await pages[0].locator("#shared-source").inputValue(), round.id);
-  await pages[0].locator("#shared-name").fill("생성자");
+  await pages[0].locator("#shared-draft-player-0").fill("생성자");
   await pages[0].locator('[data-shared="check"]').click();
   await waitSaved(pages[0]);
   assert.match(await pages[0].locator("#shared-checks").innerText(), /로그인: 확인됨.*서버 조회: 확인됨.*RPC: 미확인/);
-  assert.equal(await pages[0].locator("#shared-name").inputValue(), "생성자");
+  assert.equal(await pages[0].locator("#shared-draft-player-0").inputValue(), "생성자");
   await pages[0].locator('[data-shared="create"]').click();
   await pages[0]
     .getByRole("heading", { name: "공동 테스트", exact: true })
