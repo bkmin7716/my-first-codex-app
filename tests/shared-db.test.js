@@ -51,18 +51,18 @@ test('owner roster preserved at create/join/claim; reconnect identity; competing
  assert.equal(g.round.players[1],'선수명 수정');assert.deepEqual(g.round.holes,r.holes);assert.deepEqual(g.round.settled,r.settled);assert.deepEqual(calculate(g.round).post.amounts,amounts);
 });
 
-test('shared lock needs all four; original score/Near/money/locks/finalize/audit and RLS preserved',async()=>{
+test('shared game works without all four connected; original score/Near/money/locks/finalize/audit and RLS preserved',async()=>{
  let g=await rpc(0,'golf_create',[rosterRound(),'계정0']);
- await assert.rejects(()=>mutate(0,g,'score',{hole:0,player:0,value:4}),/본인 선수/);
+ g=await mutate(0,g,'score',{hole:0,player:0,value:4});
  g=await mutate(0,g,'slot',{value:3});
- await assert.rejects(()=>mutate(0,g,'lock',{hole:1,value:true}),/선수 슬롯/);
+ g=await mutate(0,g,'score',{hole:1,player:0,value:4});
  for(let i=1;i<4;i++){g=await rpc(i,'golf_join',[g.code,`계정${i}`]);g=await mutate(i,g,'slot',{value:[3,1,2,0][i]});}
  await assert.rejects(()=>rpc(4,'golf_join',[g.code,'다섯째']),/모두 찼습니다/);
  for(const table of ['golf_games','golf_members','golf_audit'])assert.equal((await as(4,`select * from public.${table} where ${table==='golf_games'?'id':'game_id'}=$1`,[g.id])).rows.length,0);
  await assert.rejects(()=>mutate(4,g,'score',{hole:0,player:0,value:3}),/참가자/);
  await assert.rejects(()=>as(1,'update public.golf_games set finalized=true'),/permission denied/);
  await assert.rejects(()=>as(1,'delete from public.golf_audit'),/permission denied/);
- await assert.rejects(()=>mutate(0,g,'lock',{hole:0,value:true}),/모든 선수/);
+ await assert.rejects(()=>mutate(0,g,'lock',{hole:0,value:true}),/모든 선수의 타수/);
  for(let p=0;p<4;p++)g=await mutate(p,g,'score',{hole:0,player:p,value:[3,4,6,7][p]});
  g=await mutate(2,g,'near',{hole:0,value:2});
  g=await mutate(0,g,'paid',{hole:0,value:calculate(g.round).holes[0].expected});
@@ -80,6 +80,16 @@ test('shared lock needs all four; original score/Near/money/locks/finalize/audit
  for(const [a,d] of [['name',{value:'변경'}],['player_name',{player:0,value:'변경'}],['score',{hole:0,player:0,value:4}],['lock',{hole:0,value:false}],['cash',{value:[]}]])await assert.rejects(()=>mutate(0,g,a,d),/최종 확정/);
  g=await mutate(0,g,'finalize',{value:false});
  const last=(await as(0,'select * from public.golf_audit where game_id=$1 order by id desc limit 1',[g.id])).rows[0];assert.equal(last.actor_id,users[0]);assert.equal(last.action,'finalize');assert.equal(last.detail.before,true);assert.equal(last.detail.after,false);
+});
+
+test('one connected creator can complete all four player scores, Near, lock and payment',async()=>{
+ let g=await rpc(0,'golf_create',[rosterRound(),'생성자']);
+ for(let p=0;p<4;p++)g=await mutate(0,g,'score',{hole:0,player:p,value:[3,4,5,6][p]});
+ g=await mutate(0,g,'near',{hole:0,value:2});
+ g=await mutate(0,g,'lock',{hole:0,value:true});
+ assert.deepEqual(g.locked_holes,[0]);
+ g=await mutate(0,g,'paid',{hole:0,value:calculate(g.round).holes[0].expected});
+ assert.equal((await as(0,'select count(slot)::int n from public.golf_members where game_id=$1',[g.id])).rows[0].n,0);
 });
 
 test('new normal 1-4 owner alone records and locks; unexpected non-owner membership cannot bypass policy',async()=>{

@@ -26,7 +26,8 @@ let api = null,
   draftInitial = null,
   draftPlayers = null,
   draftName = "",
-  draftCode = new URLSearchParams(location.hash.slice(1)).get("join") || "";
+  draftCode = new URLSearchParams(location.hash.slice(1)).get("join") || "",
+   joinPreview = null;
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -100,7 +101,7 @@ function lobby() {
  const source = localRounds().find(r=>r.id===selectedSource);
  const players = draftPlayers || source?.players || ["","","",""];
  const initial = draftInitial || source?.initial || [0,1,2,3];
- return `<h1>공동 플레이 · 일반 게임 관리</h1><button data-shared="check">연결 확인 (익명 로그인·서버 조회)</button><div class="card"><label for="shared-name">계정 표시 이름 (선수 이름과 별개)</label><input id="shared-name" maxlength="40" value="${esc(draftName)}"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(draftCode)}"><button class="primary" data-shared="join">등록된 선수 확인</button><p>참여 후 생성자가 등록한 선수 중 본인을 선택하세요. 선수 이름과 초기 순위는 생성자만 수정합니다.</p></div><div class="card"><h3>게임 생성 · 선수 등록</h3><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="">새 후세인 공동 게임</option>${localRounds().map(r=>`<option value="${esc(r.id)}" ${selectedSource===r.id?"selected":""}>${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`).join("")}</select><p>생성자가 선수 이름을 등록합니다. 복사 시 기존 점수·정산 기록의 선수 순서를 유지하세요.</p>${players.map((name,i)=>`<label for="shared-draft-player-${i}">선수 ${i+1} 이름</label><input id="shared-draft-player-${i}" data-draft-player="${i}" maxlength="40" value="${esc(name)}">`).join("")}${!source || source.mode==='hussein'?`<p>초기 순위</p>${initial.map((slot,rank)=>`<label>${rank+1}등<select data-draft-rank="${rank}">${players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>슬롯 ${i+1} · ${esc(name)}</option>`).join("")}</select></label>`).join("")}`:""}<button class="primary" data-shared="create">게임 생성</button><p>공동 게임은 생성자도 본인 선수를 직접 선택합니다. 일반 게임은 생성자가 혼자 관리합니다.</p></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList===null?"":gamesList.length?gamesList.map(g=>`<div class="card"><strong>${esc(g.round.course || "라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized?"최종 확정":"진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join(""):"<p>참여한 게임이 없습니다.</p>"}</div>`;
+ return `<h1>공동 플레이 · 일반 게임 관리</h1><button data-shared="check">연결 확인 (익명 로그인·서버 조회)</button><div class="card"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(draftCode)}"><button data-shared="preview">선수 명단 조회</button>${joinPreview?`<label for="shared-join-slot">참가할 선수 이름</label><select id="shared-join-slot"><option value="">이름 선택</option>${joinPreview.players.map((name,i)=>`<option value="${i}" ${joinPreview.taken.includes(i)?"disabled":""}>${esc(name)}${joinPreview.taken.includes(i)?" (선택 완료)":""}</option>`).join("")}</select><button class="primary" data-shared="join">선택한 이름으로 참여</button>`:""}<p>선수 연결은 선택 사항입니다. 연결하지 않아도 참여자는 네 선수의 점수와 Near를 기록할 수 있습니다. 선수 이름과 초기 순위는 생성자만 수정합니다.</p></div><div class="card"><h3>게임 생성 · 선수 등록</h3><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="">새 후세인 공동 게임</option>${localRounds().map(r=>`<option value="${esc(r.id)}" ${selectedSource===r.id?"selected":""}>${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`).join("")}</select><p>생성자가 선수 이름을 등록합니다. 복사 시 기존 점수·정산 기록의 선수 순서를 유지하세요.</p>${players.map((name,i)=>`<div class="player-rank-row"><label for="shared-draft-player-${i}">선수 ${i+1} 이름</label><input id="shared-draft-player-${i}" data-draft-player="${i}" maxlength="40" value="${esc(name)}"><label for="shared-draft-rank-${i}">초기 순위</label><select id="shared-draft-rank-${i}" data-player-rank="${i}">${[1,2,3,4].map(rank=>`<option value="${rank}" ${initial[rank-1]===i?"selected":""}>${rank}등</option>`).join("")}</select></div>`).join("")}<button class="primary" data-shared="create">게임 생성</button><p>공동 게임은 선수 연결 없이도 바로 시작할 수 있습니다. 일반 게임은 생성자가 혼자 관리합니다.</p></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList===null?"":gamesList.length?gamesList.map(g=>`<div class="card"><strong>${esc(g.round.course || "라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized?"최종 확정":"진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join(""):"<p>참여한 게임이 없습니다.</p>"}</div>`;
 }
 function roster(g, r, owner) {
  const me = api.members.find(m=>m.user_id===api.userId);
@@ -111,7 +112,7 @@ function roster(g, r, owner) {
  const available = r.players.map((_,i)=>i).filter(i=>!api.members.some(m=>m.slot===i));
  const valid = available.some(i=>String(i)===selected);
  if(me?.slot!=null)slotDrafts.delete(key);
- return `<div class="card"><h3>등록 선수 · ${owner&&modern?"생성자만 이름·초기 순위 수정 가능":"등록 명단"}</h3>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${shared?(api.members.some(m=>m.slot===i)?"✓ 연결됨":"· 연결 대기"):""}</p>${owner&&modern?`<label for="shared-player-name-${i}">선수 ${i+1} 이름 수정</label><input id="shared-player-name-${i}" data-player-name="${i}" maxlength="40" value="${esc(playerNameDrafts.get(g.id+":"+i) ?? name)}" ${disabled(busy||g.finalized)}><button data-shared="player-name" data-player="${i}" ${disabled(busy||g.finalized)}>선수 이름 저장</button>`:""}`).join("")}${modern?`<label for="shared-my-name">내 계정 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(nameDrafts.get(g.id) ?? me?.name)}" ${disabled(busy||g.finalized)}><button data-shared="rename" ${disabled(busy||g.finalized)}>이름 저장</button><p class="muted">계정 표시 이름은 변경 이력에만 사용합니다. 등록 선수 이름은 바뀌지 않습니다.</p>`:""}${shared&&me?.slot!=null?`<p class="badge">내 선수: ${esc(r.players[me.slot])} · 슬롯 ${me.slot+1}</p>`:""}${shared&&me&&me.slot==null?`<label for="shared-slot">생성자가 등록한 선수 중 본인을 선택하세요</label><select id="shared-slot" ${disabled(busy||g.finalized)}><option value="" ${!valid?"selected":""}>본인 선수를 선택하세요</option>${r.players.map((name,i)=>`<option value="${i}" ${selected===String(i)&&valid?"selected":""} ${disabled(!available.includes(i))}>${esc(name)} · 슬롯 ${i+1}${available.includes(i)?"":" (이미 선택됨)"}</option>`).join("")}</select><button data-shared="claim" ${disabled(!valid||busy||g.finalized)}>내 선수 슬롯 연결</button>`:""}${r.mode==='hussein'?`<p>초기 순위</p>${r.initial.map((slot,rank)=>owner&&modern?`<label>${rank+1}등<select data-initial="${rank}" ${disabled(busy||g.finalized||g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>${esc(name)}</option>`).join("")}</select></label>`:`<p>${rank+1}등: ${esc(r.players[slot])}</p>`).join("")}`:""}</div>`;
+ return `<div class="card"><h3>등록 선수 · ${owner&&modern?"생성자만 이름·초기 순위 수정 가능":"등록 명단"}</h3>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${shared?(api.members.some(m=>m.slot===i)?"✓ 연결됨":"· 연결 대기"):""}</p>${owner&&modern?`<label for="shared-player-name-${i}">선수 ${i+1} 이름 수정</label><input id="shared-player-name-${i}" data-player-name="${i}" maxlength="40" value="${esc(playerNameDrafts.get(g.id+":"+i) ?? name)}" ${disabled(busy||g.finalized)}><button data-shared="player-name" data-player="${i}" ${disabled(busy||g.finalized)}>선수 이름 저장</button>`:""}`).join("")}${modern?`<label for="shared-my-name">내 계정 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(nameDrafts.get(g.id) ?? me?.name)}" ${disabled(busy||g.finalized)}><button data-shared="rename" ${disabled(busy||g.finalized)}>이름 저장</button><p class="muted">계정 표시 이름은 변경 이력에만 사용합니다. 등록 선수 이름은 바뀌지 않습니다.</p>`:""}${shared&&me?.slot!=null?`<p class="badge">내 선수: ${esc(r.players[me.slot])} · 슬롯 ${me.slot+1}</p>`:""}${shared&&me&&me.slot==null?`<label for="shared-slot">참가할 선수 이름을 선택하세요</label><select id="shared-slot" ${disabled(busy||g.finalized)}><option value="" ${!valid?"selected":""}>본인 선수를 선택하세요</option>${r.players.map((name,i)=>`<option value="${i}" ${selected===String(i)&&valid?"selected":""} ${disabled(!available.includes(i))}>${esc(name)} · 슬롯 ${i+1}${available.includes(i)?"":" (이미 선택됨)"}</option>`).join("")}</select><button data-shared="claim" ${disabled(!valid||busy||g.finalized)}>선택한 이름으로 참가</button>`:""}${r.mode==='hussein'?`<p>초기 순위</p>${r.initial.map((slot,rank)=>owner&&modern?`<label>${rank+1}등<select data-initial="${rank}" ${disabled(busy||g.finalized||g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>${esc(name)}</option>`).join("")}</select></label>`:`<p>${rank+1}등: ${esc(r.players[slot])}</p>`).join("")}`:""}</div>`;
 }
 function holeWon(x,j){return x.winner==='A'?x.hussein===j:x.winner==='B'?x.allies?.includes(j):false;}
 function holeRole(x,j,first){
@@ -130,7 +131,7 @@ function gameView() {
     owner = g.owner_id === api.userId,
     locked = g.locked_holes.includes(hole),
     blocked = g.finalized || locked || busy || (isSoloRound(r) && !owner),
-    awaiting = isSharedRound(r) && api.members.find(m=>m.user_id===api.userId)?.slot == null;
+    awaiting = false;
   return `<div class="row"><h1>${esc(r.course || "공동 라운드")}</h1><span class="badge">${owner ? "생성자" : "참가자"} · ${api.members.length}/${r.players.length}명</span></div><p>${esc(r.date)} · ${r.mode === "hussein" ? "후세인" : "일반"} · ${g.finalized ? "🔒 최종 정산 확정" : "진행 중"}</p><div class="card"><strong>참여 코드 ${esc(g.code)}</strong><div class="actions">${owner && !isSoloRound(r)?`<button data-shared="invite">초대 링크 복사</button>`:""}<button data-shared="lobby">공동 게임 목록</button></div><p class="muted">${api.members.map((m) => esc(m.name) + (m.user_id === g.owner_id ? " (생성자)" : "")).join(" · ")}</p></div><div class="actions">${[
     ["score", "스코어"],
     ["summary", "현황·정산"],
@@ -142,7 +143,7 @@ function gameView() {
     )
     .join(
       "",
-    )}</div>${roster(g, r, owner)}${awaiting ? "<p>본인 선수를 선택하면 스코어 입력 화면이 열립니다.</p>" : page === "score" ? `<div class="hole-grid">${r.holes.map((h, i) => `<button data-shared-hole="${i}" class="${hole === i ? "active" : ""}">${i + 1}${g.locked_holes.includes(i) ? " 🔒" : c.holes[i].confirmed ? " ✓" : ""}</button>`).join("")}</div><h2>${hole + 1}번 홀 · PAR ${r.holes[hole].par}</h2><div class="card">${r.players.map((p, i) => {const x=c.holes[hole];return `<div class="score ${r.mode==='hussein'&&x.hussein===i?'current-hussein':''} ${holeWon(x,i)?'winner-card':''}"><div><label for="shared-score-${i}">${esc(p)}</label>${r.mode==='hussein'?holeRole(x,i,hole===0):''}${holeWon(x,i)?'<span class="badge victory">✓ 승리</span>':''}${x.rank?`<small>현재 홀 ${x.rank.indexOf(i)+1}등</small>`:'' }${r.mode==='hussein'&&x.confirmed?`<small class="money">이번 홀 ${x.earned[i]}점 · ${money(x.expected[i])}${r.holes[hole].par===3&&r.holes[hole].near===i?' (Near 1점 포함)':''}</small>`:''}</div><input id="shared-score-${i}" type="number" inputmode="numeric" min="1" max="30" data-shared-score="${i}" value="${r.holes[hole].scores[i] ?? ""}" ${disabled(blocked)}></div>`;}).join("")}${r.mode === "hussein" && r.holes[hole].par === 3 ? `<label for="shared-near">Near · 별도 1점</label><select id="shared-near" ${disabled(blocked)}><option value="">Near 없음</option>${r.players.map((p, i) => `<option value="${i}" ${r.holes[hole].near === i ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>` : ""}${r.mode==="hussein"?holeResult(r,r.holes[hole],c.holes[hole]):""}<p>${locked ? "🔒 잠긴 홀입니다. 생성자가 잠금을 해제한 뒤 수정할 수 있습니다." : "모든 참가자가 모든 선수의 타수와 Near를 수정할 수 있습니다."}</p><button data-shared="lock" ${disabled(busy || g.finalized || (locked && !owner) || !r.holes[hole].scores.every((v) => v !== null) || (!locked && isSharedRound(r) && api.members.filter(m=>m.slot != null).length !== r.players.length) || (!owner && isSoloRound(r)))}>${locked ? "홀 잠금 해제 (생성자)" : "이 홀 입력 완료 · 잠금"}</button></div><div class="actions"><button data-shared="prev" ${disabled(hole === 0)}>← 이전 홀</button><button data-shared="next" ${disabled(hole === 17)}>다음 홀 →</button></div>` : page === "history" ? history() : summary(g, r, c, owner)}<p class="muted">서버가 저장을 확인한 뒤 화면에 반영됩니다. 통신이 끊긴 동안에는 공동 스코어를 저장할 수 없습니다.</p>`;
+    )}</div>${roster(g, r, owner)}${awaiting ? "<p>선수 연결 없이도 점수를 입력할 수 있습니다.</p>" : page === "score" ? `<div class="hole-grid">${r.holes.map((h, i) => `<button data-shared-hole="${i}" class="${hole === i ? "active" : ""}">${i + 1}${g.locked_holes.includes(i) ? " 🔒" : c.holes[i].confirmed ? " ✓" : ""}</button>`).join("")}</div><h2>${hole + 1}번 홀 · PAR ${r.holes[hole].par}</h2><div class="card">${r.players.map((p, i) => {const x=c.holes[hole];return `<div class="score ${r.mode==='hussein'&&x.hussein===i?'current-hussein':''} ${holeWon(x,i)?'winner-card':''}"><div><label for="shared-score-${i}">${esc(p)}</label>${r.mode==='hussein'?holeRole(x,i,hole===0):''}${holeWon(x,i)?'<span class="badge victory">✓ 승리</span>':''}${x.rank?`<small>현재 홀 ${x.rank.indexOf(i)+1}등</small>`:'' }${r.mode==='hussein'&&x.confirmed?`<small class="money">이번 홀 ${x.earned[i]}점 · ${money(x.expected[i])}${r.holes[hole].par===3&&r.holes[hole].near===i?' (Near 1점 포함)':''}</small>`:''}</div><input id="shared-score-${i}" type="number" inputmode="numeric" min="1" max="30" data-shared-score="${i}" value="${r.holes[hole].scores[i] ?? ""}" ${disabled(blocked)}></div>`;}).join("")}${r.mode === "hussein" && r.holes[hole].par === 3 ? `<label for="shared-near">Near · 별도 1점</label><select id="shared-near" ${disabled(blocked)}><option value="">Near 없음</option>${r.players.map((p, i) => `<option value="${i}" ${r.holes[hole].near === i ? "selected" : ""}>${esc(p)}</option>`).join("")}</select>` : ""}${r.mode==="hussein"?holeResult(r,r.holes[hole],c.holes[hole]):""}<p>${locked ? "🔒 잠긴 홀입니다. 생성자가 잠금을 해제한 뒤 수정할 수 있습니다." : "모든 참가자가 모든 선수의 타수와 Near를 수정할 수 있습니다."}</p><button data-shared="lock" ${disabled(busy || g.finalized || (locked && !owner) || !r.holes[hole].scores.every((v) => v !== null) || (!owner && isSoloRound(r)))}>${locked ? "홀 잠금 해제 (생성자)" : "이 홀 입력 완료 · 잠금"}</button></div><div class="actions"><button data-shared="prev" ${disabled(hole === 0)}>← 이전 홀</button><button data-shared="next" ${disabled(hole === 17)}>다음 홀 →</button></div>` : page === "history" ? history() : summary(g, r, c, owner)}<p class="muted">서버가 저장을 확인한 뒤 화면에 반영됩니다. 통신이 끊긴 동안에는 공동 스코어를 저장할 수 없습니다.</p>`;
 }
 function summary(g, r, c, owner) {
   return `<h2>라운드 현황·정산</h2><div class="card"><h3>홀별 기록</h3>${r.holes.map((h,hole)=>`<p>${hole+1}홀 · ${r.players.map((name,i)=>`${esc(name)} ${h.scores[i]??"—"}타${r.mode==="hussein"&&c.holes[hole].hussein===i?" (현재 후세인)":""}`).join(" · ")}</p>`).join("")}</div>${!c.complete ? '<p class="warning">미완료 라운드의 임시 정산입니다.</p>' : ""}<div class="grid">${r.players.map((name, i) => `<div class="card"><h3>${esc(name)}</h3><p>총 ${c.totals[i].total}타 · 전반 ${c.totals[i].front} / 후반 ${c.totals[i].back}<br>Par 대비 ${c.totals[i].relative > 0 ? "+" : ""}${c.totals[i].relative}</p>${r.mode === "hussein" ? `<strong>${c.points[i]}점 · 2등 ${c.second[i]}회</strong><p>${r.payment === "post" ? `${c.post.amounts[i] < 0 ? "낼 돈" : "받을 돈"} ${money(Math.abs(c.post.amounts[i]))}` : `예정 수령 ${money(c.points[i] * r.rate)} / 실제 ${money(c.pre.received[i])}`}</p>${r.payment === "post" ? `<p>${r.settled[i] === null ? "정산 대기" : r.settled[i] === c.post.amounts[i] ? "✓ 실제 정산 완료" : "⚠ 금액 변경 · 재정산 필요"}</p>${owner ? `<button data-settle="${i}" ${disabled(busy || g.finalized)}>실제 수금·지급 완료 기록 변경</button>` : ""}` : ""}` : ""}</div>`).join("")}</div>${r.mode === "hussein" ? `<div class="card"><p>현재 이월 ${c.carry}점 · ${money(c.carry * r.rate)}</p>${r.payment === "pre" ? `<p>공동 자금 ${money(c.pre.fund)}<br>예정 지급 ${money(c.pre.expected)} · 실제 지급 ${money(c.pre.actual)}<br>미지급 ${money(c.pre.unpaid)} · 잔액 ${money(c.pre.balance)}<br>예정 상금 부족액 ${money(c.pre.shortage)} · 실제 지급 부족액 ${money(Math.max(0, c.pre.actual - c.pre.fund))}</p>${c.holes.map((h, i) => `<p>${i + 1}홀 · 예정 ${money(sum(h.expected))} / 실제 ${money(sum(h.paid))}${h.stale ? " ⚠ 재정산 필요" : ""} ${owner ? `<button data-pay="${i}" ${disabled(busy || g.finalized || !h.confirmed)}>${h.stale ? "재정산 기록 갱신" : r.holes[i].paid ? "지급 기록 취소" : "지급 완료 기록"}</button>` : ""}</p>`).join("")}${owner ? `<label for="shared-cash-type">실제 거래 종류</label><select id="shared-cash-type"><option value="collect">추가 수금</option><option value="refund">환급</option></select><label for="shared-cash-amount">금액 (VND)</label><input id="shared-cash-amount" type="number" min="1" inputmode="numeric"><button data-shared="cash" ${disabled(busy || g.finalized)}>거래 기록 추가</button>` : ""}${r.cash.map((v, i) => `<p>${v.type === "collect" ? "수금" : "환급"} ${money(v.amount)} ${owner ? `<button data-remove-cash="${i}" ${disabled(busy || g.finalized)}>기록 삭제</button>` : ""}</p>`).join("")}` : `<p>수금 예정 ${money(c.post.collect)} · 지급 예정 ${money(c.post.payout)}<br>정산 차액 ${money(c.post.difference)} (양수: 추가 수금 / 음수: 잔액)<br>차액은 자동 배분하지 않습니다.</p>`}<p class="muted">18홀 이후 남은 이월은 미지급입니다. 이 버튼들은 실제 송금 기능이 아닙니다.</p>${owner ? `<label for="shared-rate">점당 단가 (모든 홀 잠금 해제 후 수정 가능)</label><input id="shared-rate" type="number" min="1" max="10000000" value="${r.rate}" ${disabled(busy || g.finalized || g.locked_holes.length > 0)}>` : ""}</div>` : ""}<div class="card"><h3>최종 정산 확정</h3><p>잠긴 홀 ${g.locked_holes.length}/18 · ${g.finalized ? "최종 잠금 상태" : "미확정"}</p><p>18홀을 모두 잠근 후 생성자가 최종 확정할 수 있습니다. 확정하면 스코어·Near·단가·지급 및 거래 기록도 잠깁니다. 실제 지급 완료 여부는 별도로 확인하세요.</p>${owner ? `<button class="primary" data-shared="finalize" ${disabled(busy || (!g.finalized && g.locked_holes.length !== 18))}>${g.finalized ? "최종 정산 잠금 해제" : "최종 정산 확정 · 전체 잠금"}</button>` : "<p>생성자만 최종 잠금을 변경할 수 있습니다.</p>"}</div>`;
@@ -173,7 +174,7 @@ localRoot.addEventListener("click", (e) => {
   selectedSource = entry.dataset.source || "";
   draftPlayers = null; draftInitial = null;
   show();
-  panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-name")?.focus();
+  panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-draft-player-0")?.focus();
 });
 panel.addEventListener("input", (e) => {
   if (e.target.dataset.draftPlayer !== undefined) {
@@ -184,7 +185,7 @@ panel.addEventListener("input", (e) => {
   if (e.target.id === "shared-slot" && api?.game) slotDrafts.set(slotDraftKey(), e.target.value);
   if (e.target.id === "shared-my-name" && api?.game) nameDrafts.set(api.game.id,e.target.value);
   if (e.target.id === "shared-name") draftName = e.target.value;
-  if (e.target.id === "shared-code") draftCode = e.target.value;
+  if (e.target.id === "shared-code") { draftCode = e.target.value; joinPreview = null; }
   if (e.target.id === "shared-source") selectedSource = e.target.value;
 });
 panel.addEventListener("focusin", (e) => {
@@ -228,6 +229,12 @@ async function mutate(action, detail, revision) {
 panel.addEventListener("change", (e) => {
   const el = e.target;
   if (el.id === "shared-source") {selectedSource=el.value; draftInitial=null; draftPlayers=null; render();}
+  if (el.dataset.playerRank !== undefined) {
+    const initial=[...(draftInitial || localRounds().find(r=>r.id===selectedSource)?.initial || [0,1,2,3])];
+    const player=Number(el.dataset.playerRank), rank=Number(el.value)-1, previous=initial.indexOf(player);
+    if(previous !== rank) [initial[rank],initial[previous]]=[initial[previous],initial[rank]];
+    draftInitial=initial;render();
+  }
   if (el.dataset.draftRank !== undefined) {
     const initial=[...(draftInitial || localRounds().find(r=>r.id===selectedSource)?.initial || [0,1,2,3])], rank=+el.dataset.draftRank, other=initial.indexOf(+el.value);
     [initial[rank],initial[other]]=[initial[other],initial[rank]]; draftInitial=initial; render();
@@ -310,13 +317,18 @@ panel.addEventListener("click", (e) => {
   const playerNameValue = act === "player-name" ? (playerNameDrafts.get(api.game.id+":"+b.dataset.player) ?? panel.querySelector(`#shared-player-name-${b.dataset.player}`).value).trim() : null;
   const selectedSlot = act === "claim" ? panel.querySelector("#shared-slot")?.value : null;
   run(async () => {
-    if (act === "check") {
+    if (act === "preview") {
+       const c = await connection();
+       joinPreview = await c.preview(panel.querySelector("#shared-code").value.trim());
+       return;
+     }
+     if (act === "check") {
       const c = await connection();
       gamesList = await c.list();
       return;
     }
     if (act === "create" || act === "join") {
-      const name = panel.querySelector("#shared-name").value.trim();
+      const name = (draftPlayers?.[0] || localRounds().find(r=>r.id===selectedSource)?.players?.[0] || "생성자").trim();
       if (!name || name.length > 40)
         throw Error("내 표시 이름을 1~40자로 입력하세요.");
       const code = panel.querySelector("#shared-code").value.trim();
@@ -332,6 +344,7 @@ panel.addEventListener("click", (e) => {
           : createRound("hussein");
         if (!r) throw Error("로컬 라운드를 다시 선택하세요.");
         if (draftInitial) r.initial=[...draftInitial];
+         if (r.mode === "hussein" && (r.initial.length !== 4 || new Set(r.initial).size !== 4)) throw Error("초기 순위는 1~4등을 각각 한 명씩 선택하세요.");
         r.players = [...(draftPlayers || r.players)].map(v=>v.trim());
         if(!source && !draftPlayers)throw Error("선수 4명의 이름을 먼저 입력하세요.");
         r.sharedSlots = r.mode === "hussein" || r.sharedSlots === true;
@@ -358,7 +371,7 @@ panel.addEventListener("click", (e) => {
     if (act === "claim") {
       if (!/^[0-3]$/.test(selectedSlot ?? "") || api.members.some(m => m.slot === Number(selectedSlot)))
         throw Error("연결할 수 있는 선수 슬롯을 다시 선택하세요.");
-      if (confirm("선택한 선수가 본인인지 확인하세요. 기존 기록과 선수 이름은 유지되며 연결 후 슬롯을 변경할 수 없습니다.")) {
+      if (confirm("선택한 선수 이름으로 참가합니다. 선택 후 다른 선수로 변경할 수 없습니다.")) {
         await api.claimSlot(Number(selectedSlot));
         slotDrafts.delete(slotDraftKey());
       }

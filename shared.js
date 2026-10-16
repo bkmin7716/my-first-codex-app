@@ -101,6 +101,16 @@ export class SharedGames {
       await this.rpc("golf_create", { p_round: payload, p_name: name }),
     );
   }
+  async preview(code) {
+    await this.identity();
+    const {data}=await this.request("rpc.golf_preview", "rpc",()=>this.client.rpc("golf_preview",{p_code:code}));
+    if (!data || !Array.isArray(data.players) || !Array.isArray(data.taken)) throw Error("선수 명단을 확인할 수 없습니다.");
+    return data;
+  }
+  async joinSelected(code, slot) {
+    await this.identity();
+    return this.watch(await this.rpc("golf_join_selected",{p_code:code,p_slot:slot}));
+  }
   async join(code, name) {
     await this.identity();
     return this.watch(
