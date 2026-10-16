@@ -246,11 +246,13 @@ try {
     if (i === 1) {
       await pages[i].goto(origin + basePath + "/#join=" + code);
       await pages[i].reload();
-      await pages[i].locator("#shared-name").fill("참가자1");
+      // The new join flow selects a pre-registered player instead of typing a name.
     }
     await pages[i].locator("#shared-code").fill(code);
+    await pages[i].locator('[data-shared="preview"]').click();
+    await pages[i].locator("#shared-join-slot").waitFor();
+    await pages[i].locator("#shared-join-slot").selectOption(String(i));
     await pages[i].locator('[data-shared="join"]').click();
-    await pages[i].locator("#shared-slot").waitFor();
     await waitSaved(pages[i]);
     assert.equal(await pages[i].getByRole("alert").count(), 0);
     if (i === 1) assert.equal(new URL(pages[i].url()).hash, "");
