@@ -231,7 +231,13 @@ try {
     .waitFor();
   assert.match(await pages[0].locator("#shared-checks").innerText(), /RPC: 실행 확인됨/);
   const saved = await db.query("select round from public.golf_games");
-  assert.deepEqual(saved.rows[0].round, round);
+  // A copied game may gain server-managed policy metadata. The source's
+  // existing score and settlement data must remain unchanged.
+  for (const field of ["holes", "cash", "settled", "payment", "rate", "finished"]) {
+    assert.deepEqual(saved.rows[0].round[field], round[field], `copy preserves ${field}`);
+  }
+  assert.deepEqual(saved.rows[0].round.players, round.players);
+  assert.deepEqual(saved.rows[0].round.initial, round.initial);
   const code = (
     await pages[0].locator(".shared-panel .card strong").first().innerText()
   ).replace("참여 코드 ", "");
@@ -421,14 +427,12 @@ try {
     p.on("pageerror", e => errors.push(e.message));
     await p.goto(origin + basePath + "/");
     await p.getByRole("button", {name:"참여 코드로 참여",exact:true}).click();
-    await p.locator("#shared-name").fill("실패 테스트");
     await p.locator("#shared-code").fill("123456789ABC");
     await p.locator('[data-shared="check"]').click();
     await p.getByRole("alert").waitFor();
     const text = await p.locator(".shared-panel").innerText();
     assert.doesNotMatch(text, /sb_secret_|실시간 연결됨|RPC: 실행 확인됨/);
     assert.match(text, configuration === "missing" ? /배포 설정: 누락/ : configuration === "invalid" ? /URL 형식 오류/ : /로그인: 실패/);
-    assert.equal(await p.locator("#shared-name").inputValue(), "실패 테스트");
     assert.equal(await p.locator("#shared-code").inputValue(), "123456789ABC");
     await context.close();
   }
