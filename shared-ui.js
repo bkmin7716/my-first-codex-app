@@ -26,7 +26,8 @@ let api = null,
   draftInitial = null,
   draftPlayers = null,
   draftName = "",
-  draftCode = new URLSearchParams(location.hash.slice(1)).get("join") || "";
+  draftCode = new URLSearchParams(location.hash.slice(1)).get("join") || "",
+   joinPreview = null;
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -100,7 +101,7 @@ function lobby() {
  const source = localRounds().find(r=>r.id===selectedSource);
  const players = draftPlayers || source?.players || ["","","",""];
  const initial = draftInitial || source?.initial || [0,1,2,3];
- return `<h1>공동 플레이 · 일반 게임 관리</h1><button data-shared="check">연결 확인 (익명 로그인·서버 조회)</button><div class="card"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(draftCode)}"><button class="primary" data-shared="join">등록된 선수 확인</button><p>선수 연결은 선택 사항입니다. 연결하지 않아도 참여자는 네 선수의 점수와 Near를 기록할 수 있습니다. 선수 이름과 초기 순위는 생성자만 수정합니다.</p></div><div class="card"><h3>게임 생성 · 선수 등록</h3><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="">새 후세인 공동 게임</option>${localRounds().map(r=>`<option value="${esc(r.id)}" ${selectedSource===r.id?"selected":""}>${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`).join("")}</select><p>생성자가 선수 이름을 등록합니다. 복사 시 기존 점수·정산 기록의 선수 순서를 유지하세요.</p>${players.map((name,i)=>`<div class="player-rank-row"><label for="shared-draft-player-${i}">선수 ${i+1} 이름</label><input id="shared-draft-player-${i}" data-draft-player="${i}" maxlength="40" value="${esc(name)}"><label for="shared-draft-rank-${i}">초기 순위</label><select id="shared-draft-rank-${i}" data-player-rank="${i}">${[1,2,3,4].map(rank=>`<option value="${rank}" ${initial[rank-1]===i?"selected":""}>${rank}등</option>`).join("")}</select></div>`).join("")}<button class="primary" data-shared="create">게임 생성</button><p>공동 게임은 선수 연결 없이도 바로 시작할 수 있습니다. 일반 게임은 생성자가 혼자 관리합니다.</p></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList===null?"":gamesList.length?gamesList.map(g=>`<div class="card"><strong>${esc(g.round.course || "라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized?"최종 확정":"진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join(""):"<p>참여한 게임이 없습니다.</p>"}</div>`;
+ return `<h1>공동 플레이 · 일반 게임 관리</h1><button data-shared="check">연결 확인 (익명 로그인·서버 조회)</button><div class="card"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(draftCode)}"><button data-shared="preview">선수 명단 조회</button>${joinPreview?`<label for="shared-join-slot">참가할 선수 이름</label><select id="shared-join-slot"><option value="">이름 선택</option>${joinPreview.players.map((name,i)=>`<option value="${i}" ${joinPreview.taken.includes(i)?"disabled":""}>${esc(name)}${joinPreview.taken.includes(i)?" (선택 완료)":""}</option>`).join("")}</select><button class="primary" data-shared="join">선택한 이름으로 참여</button>`:""}<p>선수 연결은 선택 사항입니다. 연결하지 않아도 참여자는 네 선수의 점수와 Near를 기록할 수 있습니다. 선수 이름과 초기 순위는 생성자만 수정합니다.</p></div><div class="card"><h3>게임 생성 · 선수 등록</h3><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="">새 후세인 공동 게임</option>${localRounds().map(r=>`<option value="${esc(r.id)}" ${selectedSource===r.id?"selected":""}>${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`).join("")}</select><p>생성자가 선수 이름을 등록합니다. 복사 시 기존 점수·정산 기록의 선수 순서를 유지하세요.</p>${players.map((name,i)=>`<div class="player-rank-row"><label for="shared-draft-player-${i}">선수 ${i+1} 이름</label><input id="shared-draft-player-${i}" data-draft-player="${i}" maxlength="40" value="${esc(name)}"><label for="shared-draft-rank-${i}">초기 순위</label><select id="shared-draft-rank-${i}" data-player-rank="${i}">${[1,2,3,4].map(rank=>`<option value="${rank}" ${initial[rank-1]===i?"selected":""}>${rank}등</option>`).join("")}</select></div>`).join("")}<button class="primary" data-shared="create">게임 생성</button><p>공동 게임은 선수 연결 없이도 바로 시작할 수 있습니다. 일반 게임은 생성자가 혼자 관리합니다.</p></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList===null?"":gamesList.length?gamesList.map(g=>`<div class="card"><strong>${esc(g.round.course || "라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized?"최종 확정":"진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join(""):"<p>참여한 게임이 없습니다.</p>"}</div>`;
 }
 function roster(g, r, owner) {
  const me = api.members.find(m=>m.user_id===api.userId);
@@ -173,7 +174,7 @@ localRoot.addEventListener("click", (e) => {
   selectedSource = entry.dataset.source || "";
   draftPlayers = null; draftInitial = null;
   show();
-  panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-name")?.focus();
+  panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-draft-player-0")?.focus();
 });
 panel.addEventListener("input", (e) => {
   if (e.target.dataset.draftPlayer !== undefined) {
@@ -184,7 +185,7 @@ panel.addEventListener("input", (e) => {
   if (e.target.id === "shared-slot" && api?.game) slotDrafts.set(slotDraftKey(), e.target.value);
   if (e.target.id === "shared-my-name" && api?.game) nameDrafts.set(api.game.id,e.target.value);
   if (e.target.id === "shared-name") draftName = e.target.value;
-  if (e.target.id === "shared-code") draftCode = e.target.value;
+  if (e.target.id === "shared-code") { draftCode = e.target.value; joinPreview = null; }
   if (e.target.id === "shared-source") selectedSource = e.target.value;
 });
 panel.addEventListener("focusin", (e) => {
@@ -316,13 +317,18 @@ panel.addEventListener("click", (e) => {
   const playerNameValue = act === "player-name" ? (playerNameDrafts.get(api.game.id+":"+b.dataset.player) ?? panel.querySelector(`#shared-player-name-${b.dataset.player}`).value).trim() : null;
   const selectedSlot = act === "claim" ? panel.querySelector("#shared-slot")?.value : null;
   run(async () => {
-    if (act === "check") {
+    if (act === "preview") {
+       const c = await connection();
+       joinPreview = await c.preview(panel.querySelector("#shared-code").value.trim());
+       return;
+     }
+     if (act === "check") {
       const c = await connection();
       gamesList = await c.list();
       return;
     }
     if (act === "create" || act === "join") {
-      const name = panel.querySelector("#shared-name").value.trim();
+      const name = (draftPlayers?.[0] || localRounds().find(r=>r.id===selectedSource)?.players?.[0] || "생성자").trim();
       if (!name || name.length > 40)
         throw Error("내 표시 이름을 1~40자로 입력하세요.");
       const code = panel.querySelector("#shared-code").value.trim();
