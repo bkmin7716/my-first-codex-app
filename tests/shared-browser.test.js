@@ -425,7 +425,7 @@ try {
     (await pages[0].locator(".shared-panel").innerText()).includes("3 → 8"),
   );
   await contexts[3].setOffline(true);
-  await setStroke(pages[3], 0, "9");
+  await setStroke(pages[3], 0, "7");
   await pages[3].getByRole("alert").waitFor();
   await waitSaved(pages[3]);
   assert.equal(await pages[3].locator("#shared-score-0").getAttribute("data-stroke"), "8");
@@ -596,9 +596,9 @@ try {
   assert.equal(await pwa.getByRole("alert").count(), 0,
     await pwa.locator(".shared-panel").innerText());
   assert.equal(await pwa.locator("#shared-slot").count(),0);
-  await setStroke(pwa, 0, "10");
+  await setStroke(pwa, 0, "8");
   await waitSaved(pwa);
-  await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").dataset.stroke === "10");
+  await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").dataset.stroke === "8");
   assert.match(await pwa.locator("#shared-checks").textContent(), /RPC: 실행 확인됨/);
   assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   await pwaContext.close();
