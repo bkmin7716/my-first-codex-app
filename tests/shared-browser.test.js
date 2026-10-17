@@ -302,6 +302,11 @@ try {
     await setStroke(pages[1], player, String(player+4));
     await waitSaved(pages[1]); await waitSynced();
   }
+  // Two independent accounts edit the same score in both directions, before any slot claim.
+  await setStroke(pages[1],0,'5');await waitSaved(pages[1]);await waitSynced();
+  assert.equal(await pages[0].locator('#shared-score-0').getAttribute('data-stroke'),'5');
+  await setStroke(pages[0],0,'4');await waitSaved(pages[0]);await waitSynced();
+  assert.equal(await pages[1].locator('#shared-score-0').getAttribute('data-stroke'),'4');
   await pages[1].locator('#shared-near').selectOption('1');
   await waitSaved(pages[1]); await waitSynced();
   await pages[1].locator('[data-shared="lock"]').click();
@@ -522,6 +527,12 @@ try {
   }
   await setStroke(pages[4],1,'5');await waitSaved(pages[4]);
   await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='5');
+  await setStroke(pages[0],1,'6');await waitSaved(pages[0]);
+  await pages[4].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='6');
+  await setStroke(pages[4],1,'5');await waitSaved(pages[4]);
+  await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='5');
+  const normalMembers=(await db.query('select slot from public.golf_members where game_id=(select id from public.golf_games where code=$1)',[normalCode])).rows;
+  assert.equal(normalMembers.length,2);assert.ok(normalMembers.every(m=>m.slot===null));
   await pages[4].locator('[data-shared-hole="17"]').click();
   await setStroke(pages[4],0,'6');await waitSaved(pages[4]);
   await pages[0].locator('[data-shared-hole="17"]').click();
