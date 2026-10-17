@@ -50,3 +50,14 @@
 .game-settings>summary,#shared-debug>summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;font-weight:650}
 .shared-panel #shared-debug{margin-bottom:12px;font-size:13px}
 .shared-panel .game-settings{margin:12px 0}
+
+/* A shared 18-hole card: only the hole region scrolls on small screens. */
+.scorecard-scroll{overflow-x:auto;max-width:100%;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;margin:16px 0;border:1px solid #cbd8cc;border-radius:12px}
+.scorecard{border-collapse:separate;border-spacing:0;min-width:1500px;width:100%;text-align:center;font-variant-numeric:tabular-nums}
+.scorecard th,.scorecard td{padding:5px;border-bottom:1px solid #d9e2da;border-right:1px solid #e2e9e3;background:#fff;min-width:64px}
+.scorecard .player-fixed{position:sticky;left:0;z-index:2;min-width:100px;max-width:130px;white-space:normal;overflow-wrap:anywhere;background:#edf5ef;box-shadow:2px 0 3px #0001}
+.scorecard thead th{background:#edf5ef}
+.scorecard input,.shared-panel .scorecard input{width:58px;min-height:48px;margin:0;padding:6px;font-size:18px;text-align:center}
+.scorecard button,.shared-panel .scorecard button{min-height:44px;margin:0;padding:6px;width:100%}
+.scorecard .selected-hole{background:#e9f4eb}
+.scorecard td[data-total]{font-weight:700;background:#f3f7f4}

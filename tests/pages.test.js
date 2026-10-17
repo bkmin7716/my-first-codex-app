@@ -18,7 +18,7 @@ try {
   assert.match(config, /sb_publishable_test-public/);
   assert.doesNotMatch(config, /must-not-be-copied/);
   assert.match(await readFile(join(output, 'sw.js'), 'utf8'), /golf-hussein-pages-123-2/);
-  assert.deepEqual((await readdir(output)).sort(), ['.nojekyll', 'app.js', 'engine.js', 'icon-192.png', 'icon-512.png', 'index.html', 'manifest.webmanifest', 'shared-config.js', 'shared-ui.js', 'shared.js', 'storage.js', 'style.css', 'sw.js'].sort());
+  assert.deepEqual((await readdir(output)).sort(), ['.nojekyll', 'app.js', 'engine.js', 'scorecard.js', 'icon-192.png', 'icon-512.png', 'index.html', 'manifest.webmanifest', 'shared-config.js', 'shared-ui.js', 'shared.js', 'storage.js', 'style.css', 'sw.js'].sort());
   const base = new URL('https://bkmin7716.github.io/my-first-codex-app/');
   const html = await readFile(join(output, 'index.html'), 'utf8');
   for (const [, path] of html.matchAll(/(?:src|href)="([^"]+)"/g)) {

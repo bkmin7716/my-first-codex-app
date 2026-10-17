@@ -15,7 +15,7 @@ export async function buildPages({ env = process.env, output = 'site' } = {}) {
   // Validate before writing any deployable files. Copy only public runtime assets.
   await rm(output, { recursive: true, force: true });
   await mkdir(output, { recursive: true });
-  const assets = ['index.html', 'style.css', 'app.js', 'engine.js', 'storage.js', 'shared.js', 'shared-ui.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
+  const assets = ['index.html', 'style.css', 'app.js', 'engine.js', 'scorecard.js', 'storage.js', 'shared.js', 'shared-ui.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
   for (const asset of assets) await copyFile(asset, resolve(output, asset));
   await writeFile(resolve(output, 'shared-config.js'), `// Generated public browser configuration.\nexport const sharedConfig = ${JSON.stringify({ url: url.replace(/\/$/, ''), publishableKey }, null, 2)};\n`);
   const sw = await readFile('sw.js', 'utf8');

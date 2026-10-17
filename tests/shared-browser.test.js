@@ -147,11 +147,17 @@ async function stopOrigin() {
   await closed;
 }
 const sdk = `export function createClient(){
+ window.__testUser ??= Number(new URL(location.href).searchParams.get("account")||0);
  const call=async body=>{if(body.table==='golf_games' && body.limit===1){window.__connectionProbes=(window.__connectionProbes||0)+1;body.connectionFailure=!!window.__connectionFailure;if(window.__holdConnection)await window.__holdConnection;}if(body.table==='golf_members' && window.__holdMembers){window.__membersPending=true;await window.__holdMembers;}return fetch('/__db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,user:window.__testUser})}).then(r=>r.json());};
  return {auth:{async getUser(){return {data:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}},async getSession(){return {data:{session:null}}},async signInAnonymously(){return {data:{session:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}}}},
  rpc:(rpc,args)=>call({rpc,args}),from(table){let body={table};const q={select(){return q},eq(k,v){body.filter=[k,v];return q},order(field,o={}){body.order={field,...o};return q},limit(n){body.limit=n;return q},single(){body.single=true;return q},then(a,b){return call(body).then(a,b)}};return q},
  channel(){let cb,es;const c={on(e,f,fn){cb=fn;return c},subscribe(fn){fn('SUBSCRIBED');es=new EventSource('/__events');es.onmessage=()=>cb();es.onopen=()=>fn('SUBSCRIBED');return c},close(){es?.close()}};return c},removeChannel(c){c.close()}}}
 `;
+if (process.env.SCORECARD_PREVIEW === "1") {
+  console.log(`Isolated preview (temporary test DB, no Supabase): ${origin}${basePath}/?account=0`);
+  console.log(`Participant: ${origin}${basePath}/?account=1 (use the created game's join code). Ctrl+C stops the preview.`);
+  await new Promise(() => {});
+}
 const browserType = process.env.BROWSER === "webkit" ? webkit : chromium;
 const browser = await browserType.launch({
   headless: true,
@@ -496,6 +502,39 @@ try {
   await pages[1].locator('[data-shared="join"]').click();
   await pages[1].locator('#shared-score-0').waitFor();
   assert.equal(await pages[1].locator('#shared-slot').count(),0);
+  // Normal and Hussein share the exact same 18-hole card; normal has no betting controls.
+  await pages[0].locator('[data-shared="lobby"]').click();
+  await pages[0].locator('#shared-source').selectOption('new-normal');
+  await pages[0].locator('#shared-normal-count').selectOption('2');
+  await pages[0].locator('#shared-name').fill('일반 생성자');
+  await pages[0].locator('#shared-draft-player-0').fill('일반 A');
+  await pages[0].locator('#shared-draft-player-1').fill('일반 B');
+  await pages[0].locator('[data-shared="create"]').click();
+  await pages[0].locator('.scorecard input').first().waitFor();
+  assert.equal(await pages[0].locator('.scorecard input').count(),36);
+  const normalCode=(await pages[0].locator('.shared-panel .card strong').first().innerText()).replace('참여 코드 ','');
+  await pages[4].locator('#shared-code').fill(normalCode);
+  await pages[4].locator('[data-shared="join"]').click();
+  await pages[4].locator('.scorecard input').first().waitFor();
+  for(const p of [pages[0],pages[4]]) {
+    assert.equal(await p.locator('#shared-slot,#shared-near,[data-shared="lock"],.result,[data-pay],[data-settle]').count(),0);
+    assert.equal(await p.locator('.scorecard thead th').count(),22);
+  }
+  await pages[4].locator('#shared-score-1').fill('5');
+  await pages[4].locator('#shared-score-1').press('Tab');await waitSaved(pages[4]);
+  await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').value==='5');
+  assert.equal(await pages[4].locator('[data-total="out-1"]').innerText(),'5');
+  await pages[4].locator('#shared-score-17-0').fill('6');
+  await pages[4].locator('#shared-score-17-0').press('Tab');await waitSaved(pages[4]);
+  await pages[0].waitForFunction(()=>document.querySelector('#shared-score-17-0').value==='6');
+  assert.equal(await pages[4].locator('[data-total="in-0"]').innerText(),'6');
+  assert.equal(await pages[4].locator('[data-total="total-0"]').innerText(),'6');
+  await pages[4].locator('.scorecard-scroll').evaluate(el=>el.scrollLeft=800);
+  const pinned=await pages[4].evaluate(()=>{const box=document.querySelector('.scorecard-scroll').getBoundingClientRect(),name=document.querySelector('.scorecard tbody .player-fixed').getBoundingClientRect();return Math.abs(name.left-box.left)<3;});
+  assert.equal(pinned,true);
+  assert.equal(await pages[4].evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+  await pages[4].locator('[data-page="summary"]').click();
+  assert.equal(await pages[4].locator('[data-shared="finalize"],#shared-rate,#shared-cash-type,[data-pay],[data-settle]').count(),0);
   for (const configuration of ["missing", "invalid", "auth-failure"]) {
     const context = await browser.newContext({viewport:{width:390,height:844},serviceWorkers:"block"});
     contexts.push(context);

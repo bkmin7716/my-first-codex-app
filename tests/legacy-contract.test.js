@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 import {createRound} from '../engine.js';
 const oldSql=readFileSync(new URL('./fixtures/legacy-schema.sql',import.meta.url),'utf8');
-const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8');
+const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8')+readFileSync(new URL('../supabase/003-normal-shared-scorecard.sql',import.meta.url),'utf8');
 const users=Array.from({length:5},(_,i)=>`00000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`);
 const fixtures=[];
 for(const mode of ['normal','hussein'])for(const flag of ['missing','null','true']){

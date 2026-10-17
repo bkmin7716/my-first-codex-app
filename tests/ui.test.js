@@ -26,3 +26,14 @@ test('화면 7 현재·다음 후세인 구분 및 미완료·무승부·연합�
  assert.match(root.innerHTML,/연합군 승/);assert.equal((root.innerHTML.match(/✓ 승리/g)||[]).length,3);
  assert.equal((root.innerHTML.match(/이번 홀 2점 · 200,000 VND/g)||[]).length,3);
 });
+
+test('일반 1~4인 공통 카드: 18홀별 입력, OUT/IN/TOTAL, 후세인·정산 UI 없음',async()=>{
+ for(let n=1;n<=4;n++){
+  await click({act:'new-normal'});await change({field:'count'},String(n));await click({act:'play'});
+  assert.equal((root.innerHTML.match(/data-score="/g)||[]).length,n*18);
+  await change({score:'0',scoreHole:'0'},'4');await change({score:'0',scoreHole:'17'},'6');
+  const r=JSON.parse(memory.value).rounds[0];assert.equal(r.holes[0].scores[0],4);assert.equal(r.holes[17].scores[0],6);
+  assert.match(root.innerHTML,/data-total="out-0">4</);assert.match(root.innerHTML,/data-total="in-0">6</);assert.match(root.innerHTML,/data-total="total-0">10</);
+  assert.doesNotMatch(root.innerHTML,/data-field="near"|data-view="settlement"|class="result|현재 후세인|홀 잠금/);
+ }
+});

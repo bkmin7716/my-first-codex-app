@@ -1,0 +1,8 @@
+// Shared, derived scorecard view. Rendering never changes stored round data.
+export function scorecard(r, { selected = 0, shared = false, disabled = () => false } = {}) {
+  const esc = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const subtotal = (player, start, end) => r.holes.slice(start,end).reduce((sum,h) => sum+(h.scores[player]??0),0);
+  const heading = h => `<th scope="col"><button ${shared?'data-shared-hole':'data-hole'}="${h}" class="${h===selected?'active':''}" aria-label="${h+1}번 홀 선택">${h+1}</button></th>`;
+  const cell = (player,h) => `<td class="${h===selected?'selected-hole':''}"><input id="${shared?'shared-':''}score-${h===selected?'':h+'-'}${player}" ${shared?'data-shared-score':'data-score'}="${player}" data-score-hole="${h}" aria-label="${esc(r.players[player])} ${h+1}홀 타수" type="number" inputmode="numeric" min="1" max="30" value="${r.holes[h].scores[player]??''}" placeholder="—" ${disabled(h)?'disabled':''}></td>`;
+  return `<div class="scorecard-scroll" role="region" aria-label="18홀 스코어카드" tabindex="0"><table class="scorecard"><thead><tr><th scope="col" class="player-fixed">선수</th>${r.holes.slice(0,9).map((_,h)=>heading(h)).join('')}<th scope="col">OUT</th>${r.holes.slice(9).map((_,h)=>heading(h+9)).join('')}<th scope="col">IN</th><th scope="col">TOTAL</th></tr></thead><tbody>${r.players.map((name,p)=>`<tr><th scope="row" class="player-fixed">${esc(name)}</th>${r.holes.slice(0,9).map((_,h)=>cell(p,h)).join('')}<td data-total="out-${p}">${subtotal(p,0,9)}</td>${r.holes.slice(9).map((_,h)=>cell(p,h+9)).join('')}<td data-total="in-${p}">${subtotal(p,9,18)}</td><td data-total="total-${p}">${subtotal(p,0,18)}</td></tr>`).join('')}</tbody></table></div>`;
+}

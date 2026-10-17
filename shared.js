@@ -101,11 +101,11 @@ export class SharedGames {
   }
   async create(round, name) {
     validateRound(round);
-    if ((round.mode === "hussein" || round.sharedSlots === true) && round.players.length !== 4)
+    if ((round.mode === "hussein") && round.players.length !== 4)
       throw Error("공동 게임은 4명으로 설정하세요.");
     const payload = {...structuredClone(round), gamePolicyVersion: 1};
-    if (payload.mode === "hussein" || payload.sharedSlots === true) { payload.sharedSlots = true; payload.slotPolicyVersion = 1; }
-    else delete payload.slotPolicyVersion;
+    if (payload.mode === "hussein") { payload.sharedSlots = true; payload.slotPolicyVersion = 1; }
+    else { delete payload.slotPolicyVersion; payload.sharedSlots = false; }
     await this.identity();
     return this.watch(
       await this.rpc("golf_create", { p_round: payload, p_name: name }),
