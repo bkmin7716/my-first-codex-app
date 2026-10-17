@@ -24,6 +24,7 @@ const events = new Set();
 const mutationRequests = [];
 let queue = Promise.resolve();
 async function request(body) {
+  if (body.connectionFailure) throw Error('connection probe unavailable');
   const uid = users[body.user];
   if (!uid) throw Error("test user");
   await db.exec("reset role");
@@ -146,7 +147,7 @@ async function stopOrigin() {
   await closed;
 }
 const sdk = `export function createClient(){
- const call=async body=>{if(body.table==='golf_members' && window.__holdMembers){window.__membersPending=true;await window.__holdMembers;}return fetch('/__db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,user:window.__testUser})}).then(r=>r.json());};
+ const call=async body=>{if(body.table==='golf_games' && body.limit===1){window.__connectionProbes=(window.__connectionProbes||0)+1;body.connectionFailure=!!window.__connectionFailure;if(window.__holdConnection)await window.__holdConnection;}if(body.table==='golf_members' && window.__holdMembers){window.__membersPending=true;await window.__holdMembers;}return fetch('/__db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,user:window.__testUser})}).then(r=>r.json());};
  return {auth:{async getUser(){return {data:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}},async getSession(){return {data:{session:null}}},async signInAnonymously(){return {data:{session:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}}}},
  rpc:(rpc,args)=>call({rpc,args}),from(table){let body={table};const q={select(){return q},eq(k,v){body.filter=[k,v];return q},order(field,o={}){body.order={field,...o};return q},limit(n){body.limit=n;return q},single(){body.single=true;return q},then(a,b){return call(body).then(a,b)}};return q},
  channel(){let cb,es;const c={on(e,f,fn){cb=fn;return c},subscribe(fn){fn('SUBSCRIBED');es=new EventSource('/__events');es.onmessage=()=>cb();es.onopen=()=>fn('SUBSCRIBED');return c},close(){es?.close()}};return c},removeChannel(c){c.close()}}}
@@ -193,9 +194,26 @@ try {
     pages.push(p);
     await p.goto(origin + basePath + "/");
     await p.getByRole("button", { name: i === 0 ? "새 공동 게임 생성" : "참여 코드로 참여", exact: true }).click();
-    assert.match(await p.locator("#shared-checks").innerText(), /로그인: 미확인.*RPC: 미확인/);
+    await p.waitForFunction(() => document.querySelector('#connection-signal')?.dataset.state === 'ready');
+    assert.equal(await p.evaluate(()=>window.__connectionProbes>0),true);
+    assert.equal(await p.locator('#shared-debug').evaluate(el=>el.open),false);
     await p.locator("#shared-name").fill(i === 0 ? "생성자" : `참가자${i}`);
   }
+  const healthPage=pages[4];
+  await healthPage.evaluate(()=>{window.__connectionFailure=true;window.dispatchEvent(new Event('online'));});
+  await healthPage.waitForFunction(()=>document.querySelector('#connection-signal').dataset.state==='error');
+  assert.equal(await healthPage.locator('#connection-retry').isEnabled(),true);
+  const probes=await healthPage.evaluate(()=>window.__connectionProbes);
+  await healthPage.evaluate(()=>{window.__connectionFailure=false;window.__holdConnection=new Promise(resolve=>window.__releaseConnection=resolve);});
+  await healthPage.locator('#connection-retry').click();
+  await healthPage.waitForFunction(()=>window.__connectionProbes>0 && document.querySelector('#connection-signal').dataset.state==='checking');
+  await healthPage.evaluate(()=>{window.__releaseConnection();window.__holdConnection=null;});
+  await healthPage.waitForFunction(()=>document.querySelector('#connection-signal').dataset.state==='ready');
+  assert.ok(await healthPage.evaluate(()=>window.__connectionProbes)>probes);
+  await healthPage.evaluate(()=>{window.__connectionFailure=true;window.dispatchEvent(new Event('online'));});
+  await healthPage.waitForFunction(()=>document.querySelector('#connection-signal').dataset.state==='error');
+  await healthPage.evaluate(()=>{window.__connectionFailure=false;window.dispatchEvent(new Event('online'));});
+  await healthPage.waitForFunction(()=>document.querySelector('#connection-signal').dataset.state==='ready');
   const round = createRound("hussein");
   round.sharedSlots = true;
   round.slotPolicyVersion = 1;
@@ -218,9 +236,10 @@ try {
   await pages[0].getByRole("button", {name:"공동 게임으로 복사",exact:true}).click();
   assert.equal(await pages[0].locator("#shared-source").inputValue(), round.id);
   await pages[0].locator("#shared-name").fill("생성자");
+  await pages[0].locator("#shared-debug summary").click();
   await pages[0].locator('[data-shared="check"]').click();
   await waitSaved(pages[0]);
-  assert.match(await pages[0].locator("#shared-checks").innerText(), /로그인: 확인됨.*서버 조회: 확인됨.*RPC: 미확인/);
+  assert.match(await pages[0].locator("#shared-checks").textContent(), /로그인: 확인됨.*서버 조회: 확인됨.*RPC: 미확인/);
   assert.equal(await pages[0].locator("#shared-name").inputValue(), "생성자");
   // Hold the first member response while subscribe starts a refresh before watch.
   // Completion must wait for membership, rather than rendering an empty roster.
@@ -236,7 +255,7 @@ try {
   await pages[0]
     .getByRole("heading", { name: "공동 테스트", exact: true })
     .waitFor();
-  assert.match(await pages[0].locator("#shared-checks").innerText(), /RPC: 실행 확인됨/);
+  assert.match(await pages[0].locator("#shared-checks").textContent(), /RPC: 실행 확인됨/);
   const saved = await db.query("select round from public.golf_games");
   assert.deepEqual(saved.rows[0].round, round);
   const code = (
@@ -307,6 +326,7 @@ try {
     if (i === 1) {
       await pages[i].waitForTimeout(5200); // include the five-second poll
       assert.equal(await pages[i].locator("#shared-slot").inputValue(), selected);
+      await pages[i].locator("#shared-settings summary").click();
       await pages[i].locator("#shared-my-name").fill("연결 전 이름");
       await pages[i].locator('[data-shared="rename"]').click();
       await waitSaved(pages[i]); await waitSynced();
@@ -325,14 +345,19 @@ try {
     assert.deepEqual(current.cash, round.cash);
     assert.deepEqual(current.players, round.players);
   }
+  assert.equal(await pages[0].locator('#shared-player-name-0').isVisible(),false);
+  assert.equal(await pages[0].locator('[data-initial="0"]').isVisible(),false);
+  await pages[0].locator('#shared-settings summary').click();
   await pages[0].locator('[data-initial="0"]').selectOption("2");
   await waitSaved(pages[0]); await waitSynced();
   assert.equal(await pages[0].locator('[data-initial="0"]').inputValue(), "2");
   for(const p of pages.slice(1,4)) {
     assert.equal(await p.locator('[data-initial]').count(),0);
     assert.equal(await p.locator('[data-player-name]').count(),0);
+    if(!await p.locator('#shared-settings').evaluate(el=>el.open))await p.locator('#shared-settings summary').click();
     assert.match(await p.locator('.shared-panel').innerText(),/1등: 선수 3/);
   }
+  if(!await pages[1].locator('#shared-settings').evaluate(el=>el.open))await pages[1].locator('#shared-settings summary').click();
   await pages[1].locator("#shared-my-name").fill("민수");
   await pages[1].locator('[data-shared="rename"]').click();
   await waitSaved(pages[1]); await waitSynced();
@@ -400,6 +425,7 @@ try {
   await pages[3].locator("#shared-score-0").fill("9");
   await pages[3].locator("#shared-score-0").press("Tab");
   await pages[3].getByRole("alert").waitFor();
+  await waitSaved(pages[3]);
   assert.equal(await pages[3].locator("#shared-score-0").inputValue(), "8");
   await contexts[3].setOffline(false);
   await pages[0].locator('[data-shared="lobby"]').click();
@@ -412,8 +438,21 @@ try {
   await pages[0].locator('[data-shared="lobby"]').click();
   await pages[0].locator("#shared-source").selectOption("");
   for(let i=0;i<4;i++)await pages[0].locator(`#shared-draft-player-${i}`).fill(`등록 선수${i+1}`);
+  await pages[0].locator('[data-draft-player-rank="0"]').selectOption('2');
+  assert.deepEqual(await pages[0].locator('[data-draft-player-rank]').evaluateAll(els=>els.map(el=>el.value)),['2','1','0','3']);
+  assert.equal(await pages[0].locator('.player-setup-row').evaluateAll(rows=>rows.every(row=>row.querySelector('input') && row.querySelector('select'))),true);
   await pages[0].locator('[data-shared="create"]').click();
   await pages[0].getByRole("heading", {name:"공동 라운드",exact:true}).waitFor();
+  assert.equal(await pages[0].locator('#shared-settings').evaluate(el=>el.open),false);
+  const latestCreatedTask=queue.then(()=>request({user:0,table:'golf_games',order:{field:'updated_at',ascending:false}}));
+  queue=latestCreatedTask.catch(()=>{});
+  const latestCreated=(await latestCreatedTask)[0].round;
+  assert.deepEqual(latestCreated.initial,[2,1,0,3]);
+  // Restore intended Hussein for the comparison regression via owner settings.
+  await pages[0].locator('#shared-settings summary').click();
+  await pages[0].locator('[data-initial="0"]').selectOption('0');
+  await waitSaved(pages[0]);
+  await pages[0].locator('#shared-settings summary').click();
   assert.equal(await pages[0].locator("#shared-slot").inputValue(), "");
   assert.equal(await pages[0].locator("#shared-score-0").count(),1);
   assert.deepEqual(await pages[0].evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
@@ -472,8 +511,10 @@ try {
     await p.getByRole("button", {name:"참여 코드로 참여",exact:true}).click();
     await p.locator("#shared-name").fill("실패 테스트");
     await p.locator("#shared-code").fill("123456789ABC");
+    await p.locator("#shared-debug summary").click();
     await p.locator('[data-shared="check"]').click();
     await p.getByRole("alert").waitFor();
+    await p.locator("#shared-debug summary").click();
     const text = await p.locator(".shared-panel").innerText();
     assert.doesNotMatch(text, /sb_secret_|실시간 연결됨|RPC: 실행 확인됨/);
     assert.match(text, configuration === "missing" ? /배포 설정: 누락/ : configuration === "invalid" ? /URL 형식 오류/ : /로그인: 실패/);
@@ -558,7 +599,7 @@ try {
   await pwa.locator("#shared-score-0").press("Tab");
   await waitSaved(pwa);
   await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").value === "10");
-  assert.match(await pwa.locator("#shared-checks").innerText(), /RPC: 실행 확인됨/);
+  assert.match(await pwa.locator("#shared-checks").textContent(), /RPC: 실행 확인됨/);
   assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   await pwaContext.close();
   assert.deepEqual(errors, []);

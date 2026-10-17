@@ -51,7 +51,17 @@ export class SharedGames {
       if (this.diagnostics.get(operation) === entry) this.onStatus(this.status || "요청 결과 확인됨");
     }
   }
-  async identity() {
+  identity() {
+    if (this.identityPending) return this.identityPending;
+    const pending = this.verifyIdentity().finally(() => { if (this.identityPending === pending) this.identityPending = null; });
+    this.identityPending = pending;
+    return pending;
+  }
+  async checkConnection() {
+    await this.identity();
+    await this.request("golf_games.connection", "connection", () => this.client.from("golf_games").select("id").limit(1));
+  }
+  async verifyIdentity() {
     this.checks.auth = "확인 중";
     this.onStatus("익명 로그인 확인 중");
     const { data } = await this.request("auth.getSession", "auth", () => this.client.auth.getSession());

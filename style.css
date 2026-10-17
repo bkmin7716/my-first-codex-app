@@ -35,3 +35,18 @@
  .shared-panel .row{align-items:flex-start;flex-wrap:wrap}
  .shared-panel .actions>button{min-width:0}
 }
+
+/* One player and one unique initial rank per row, including narrow phones. */
+.player-setup-row{display:grid;grid-template-columns:minmax(0,1fr) 104px;gap:12px;align-items:end}
+.player-setup-row>div{min-width:0}
+.player-setup-row input,.player-setup-row select{width:100%;margin-bottom:0}
+.player-setup-row label{margin-top:12px}
+.connection-bar{max-width:680px;margin:8px auto;padding:8px 16px;display:flex;justify-content:flex-end;align-items:center;gap:12px;font-size:13px}
+#connection-signal{display:inline-flex;align-items:center;gap:7px}
+.signal-dot{width:11px;height:11px;border-radius:50%;background:#b77909;display:inline-block}
+#connection-signal[data-state="ready"] .signal-dot{background:#16803c}
+#connection-signal[data-state="error"] .signal-dot{background:#c62828}
+#connection-retry{min-height:44px;padding:6px 12px}
+.game-settings>summary,#shared-debug>summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;font-weight:650}
+.shared-panel #shared-debug{margin-bottom:12px;font-size:13px}
+.shared-panel .game-settings{margin:12px 0}

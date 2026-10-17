@@ -315,3 +315,21 @@ test("switching games does not skip member fetch behind a previous game's pendin
     assert.equal(api.members[0]?.user_id,"owner");
   } finally { release(); await oldWatch; api.stop(); }
 });
+
+test('startup connection probe verifies Auth and performs a read even when no games exist',async()=>{
+ const f=fixture();let reads=0;
+ f.client.from=table=>{assert.equal(table,'golf_games');return {select(value){assert.equal(value,'id');return this},limit(value){assert.equal(value,1);reads++;return Promise.resolve({data:[]})}}};
+ const api=new SharedGames(f.client);
+ await api.checkConnection();assert.equal(reads,1);assert.equal(api.checks.auth,'확인됨');assert.equal(api.checks.connection,'확인됨');
+ assert.equal(api.game,null);assert.equal(f.calls.length,0);
+ f.client.auth.getUser=async()=>({error:{message:'expired'}});
+ await assert.rejects(()=>api.checkConnection(),/expired/);assert.equal(reads,1);
+});
+test('concurrent startup and game actions reuse one in-flight anonymous sign-in',async()=>{
+ const f=fixture();let signins=0;
+ const signin=f.client.auth.signInAnonymously;
+ f.client.auth.signInAnonymously=async()=>{signins++;await new Promise(resolve=>setTimeout(resolve,10));return signin();};
+ const api=new SharedGames(f.client);
+ await Promise.all([api.checkConnection(),api.identity(),api.identity()]);
+ assert.equal(signins,1);assert.equal(api.userId,'owner');
+});
