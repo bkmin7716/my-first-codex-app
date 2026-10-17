@@ -506,7 +506,7 @@ try {
   await pages[0].locator('#shared-score-0').waitFor();
   assert.equal(await pages[0].locator('.relative-score').count(),2);
   const normalCode=(await pages[0].locator('.shared-panel .card strong').first().innerText()).replace('참여 코드 ','');
-  await joinAs(pages[4],normalCode,1);
+  await joinAs(pages[4],normalCode,0);
   await pages[4].locator('#shared-score-0').waitFor();
   for(const p of [pages[0],pages[4]]) {
     assert.equal(await p.locator('#shared-slot,#shared-near,[data-shared="lock"],.result,[data-pay],[data-settle]').count(),0);
@@ -525,7 +525,7 @@ try {
   });
   queue=memberInspection.catch(()=>{});
   const normalMembers=await memberInspection;
-  assert.equal(normalMembers.length,2);assert.deepEqual(normalMembers.map(m=>m.slot).sort(),[0,1]);
+  assert.equal(normalMembers.length,2);assert.deepEqual(normalMembers.map(m=>m.slot),[null,null]);
   await pages[4].locator('[data-shared-relative="1"][data-value="1"]').click();await waitSaved(pages[4]);
   await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='');
   assert.equal(await pages[0].locator('#shared-score-1 > small').innerText(),'');
