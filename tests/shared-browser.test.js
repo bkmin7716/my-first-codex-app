@@ -417,6 +417,21 @@ try {
   assert.equal(await pages[0].locator("#shared-slot").inputValue(), "");
   assert.equal(await pages[0].locator("#shared-score-0").count(),1);
   assert.deepEqual(await pages[0].evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
+  // New comparison must also be shown by the shared UI (old comparison gave Hussein a win).
+  for(let player=0;player<4;player++) {
+    await pages[0].locator(`#shared-score-${player}`).fill(String([3,5,9,4][player]));
+    await pages[0].locator(`#shared-score-${player}`).press('Tab');
+    await waitSaved(pages[0]);
+  }
+  assert.match(await pages[0].locator('.result').innerText(),/연합군 승/);
+  assert.match(await pages[0].locator('.result').innerText(),/연합군 현재 홀 상위 2명 평균: 3.5타/);
+  assert.equal(await pages[0].locator('.victory').count(),3);
+  await pages[0].reload();
+  await pages[0].getByRole('button',{name:'새 공동 게임 생성',exact:true}).click();
+  await pages[0].locator('[data-shared="list"]').click();
+  await pages[0].locator('[data-open-game]').first().click();
+  await pages[0].locator('#shared-score-0').waitFor();
+  assert.match(await pages[0].locator('.result').innerText(),/연합군 승/);
   // Existing null-flag Hussein games keep the original no-slot workflow.
   const legacyRound=createRound("hussein");legacyRound.sharedSlots=true;
   legacyRound.holes[0].scores=[3,4,5,6];

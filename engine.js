@@ -23,7 +23,7 @@ export function settle(points,rate){const amounts=points.map(p=>(p-BASE_POINTS)*
 export function calculate(r){
  validateRound(r);const n=r.players.length,points=Array(n).fill(0),second=Array(n).fill(0);let order=[...r.initial],carry=0,blocked=false;
  const holes=r.holes.map(h=>{
-  const complete=h.scores.every(x=>x!==null);const earned=Array(n).fill(0);let winner=null,rank=null,pot=0;
+  const complete=h.scores.every(x=>x!==null);const earned=Array(n).fill(0);let winner=null,rank=null,pot=0,comparisonPlayers=null,allianceAverage=null;
   // Freeze the teams before sorting this hole. A missing earlier hole blocks future teams.
   const previousRank=r.mode==='hussein'&&!blocked?[...order]:null;
   const hussein=previousRank?.[1]??null, allies=previousRank?[previousRank[0],previousRank[2],previousRank[3]]:null;
@@ -31,7 +31,10 @@ export function calculate(r){
   if(r.mode==='hussein'){
    if(!complete)blocked=true;
    if(!blocked){rank=[...order].sort((a,b)=>h.scores[a]-h.scores[b]||order.indexOf(a)-order.indexOf(b));order=rank;second[rank[1]]++;pot=carry+3;
-    const comparison=2*h.scores[hussein]-h.scores[previousRank[0]]-h.scores[previousRank[2]];
+    comparisonPlayers=rank.filter(i=>i!==hussein).slice(0,2);
+    const allianceTotal=comparisonPlayers.reduce((sum,i)=>sum+h.scores[i],0);
+    allianceAverage=allianceTotal/2;
+    const comparison=2*h.scores[hussein]-allianceTotal;
     winner=comparison<0?'A':comparison>0?'B':'tie';
     if(winner==='tie')carry=pot;
     else {if(winner==='A')earned[hussein]=pot;else allies.forEach(i=>earned[i]=pot/3);carry=0;}
@@ -40,7 +43,7 @@ export function calculate(r){
    }
   }
   const expected=earned.map(p=>p*r.rate), paid=h.paid||Array(n).fill(0),stale=!!h.paid&&expected.some((x,i)=>x!==paid[i]);
-  return {complete,previousRank,hussein,allies,carryIn,rank,winner,earned,pot,carry,expected,paid,stale,confirmed:r.mode==='normal'?complete:!!rank};
+  return {complete,previousRank,hussein,allies,comparisonPlayers,allianceAverage,carryIn,rank,winner,earned,pot,carry,expected,paid,stale,confirmed:r.mode==='normal'?complete:!!rank};
  });
  const totals=r.players.map((_,i)=>{const sum=(a,b)=>r.holes.slice(a,b).reduce((s,h)=>s+(h.scores[i]??0),0);const played=r.holes.filter(h=>h.scores[i]!==null);return {front:sum(0,9),back:sum(9,18),total:sum(0,18),played:played.length,relative:played.reduce((s,h)=>s+h.scores[i]-h.par,0)};});
  const expected=holes.reduce((s,h)=>s+h.expected.reduce((a,b)=>a+b,0),0),actual=holes.reduce((s,h)=>s+h.paid.reduce((a,b)=>a+b,0),0);

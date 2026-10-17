@@ -76,3 +76,38 @@ test('33 현재 홀 1등인 후세인도 승리 3점, Near와 승패 분리',()=
  assert.equal(x.hussein,1);assert.equal(x.rank[0],1);assert.equal(x.winner,'A');
  assert.deepEqual(x.earned,[0,3,0,1]);assert.equal(x.rank[1],2);
 });
+
+
+test('34 current-hole best two allies determine outcome, not previous-rank first and third',()=>{
+ const c=calc([[3,5,9,4]]),x=c.holes[0];
+ assert.equal(x.hussein,1);assert.deepEqual(x.comparisonPlayers,[0,3]);
+ assert.equal(x.allianceAverage,3.5);assert.equal(x.winner,'B');
+ assert.deepEqual(x.earned,[1,0,1,1]);assert.deepEqual(x.expected,[100000,0,100000,100000]);
+});
+test('35 consecutive draws change next Hussein using current rank, retain carry multiplier and Near',()=>{
+ const c=calc([[8,4,4,4],[4,8,4,4],[5,6,7,3]],3,0);
+ assert.deepEqual(c.holes.slice(0,3).map(x=>x.hussein),[1,2,3]);
+ assert.deepEqual(c.holes.slice(0,3).map(x=>x.winner),['tie','tie','A']);
+ assert.deepEqual(c.holes.slice(0,3).map(x=>x.pot),[3,6,9]);
+ assert.deepEqual(c.holes[0].rank,[1,2,3,0]);assert.deepEqual(c.holes[1].rank,[2,3,0,1]);
+ assert.deepEqual(c.points,[3,0,0,9]);assert.equal(c.carry,0);
+ assert.deepEqual(c.holes[2].expected,[100000,0,0,900000]);
+ assert.deepEqual(c.post.amounts,[-1100000,-1400000,-1400000,-500000]);
+});
+test('36 initial and previous rank break tied ally scores consistently',()=>{
+ const r=make([[5,5,5,8],[4,4,4,4]]);r.initial=[2,1,0,3];
+ const c=calculate(r);assert.deepEqual(c.holes[0].comparisonPlayers,[2,0]);
+ assert.deepEqual(c.holes[0].rank,[2,1,0,3]);assert.deepEqual(c.holes[1].rank,[2,1,0,3]);
+ assert.equal(c.holes[0].winner,'tie');assert.equal(c.holes[1].winner,'tie');
+});
+test('37 reloaded saved/finalized round recalculates amounts without changing any stored records',()=>{
+ const r=make([[3,5,9,4]],3,2);r.holes[0].paid=[0,300000,100000,0];
+ r.settled=[-1400000,-1100000,-1300000,-1400000];r.finished=true;
+ r.locked_holes=[0];r.finalized=true;r.revision=7;
+ const saved=JSON.stringify(r),loaded=JSON.parse(saved),c=calculate(loaded);
+ assert.equal(c.holes[0].winner,'B');assert.deepEqual(c.points,[1,0,2,1]);
+ assert.deepEqual(c.holes[0].expected,[100000,0,200000,100000]);
+ assert.equal(c.holes[0].stale,true);assert.equal(c.pre.actual,400000);
+ assert.deepEqual(c.post.amounts,[-1300000,-1400000,-1200000,-1300000]);
+ assert.equal(JSON.stringify(loaded),saved);
+});
