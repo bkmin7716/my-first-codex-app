@@ -7,6 +7,13 @@ import { resolve, extname } from "node:path";
 import { chromium, webkit } from "playwright";
 import { PGlite } from "@electric-sql/pglite";
 import { createRound } from "../engine.js";
+async function setStroke(page, player, stroke) {
+ const group=page.locator(`#shared-score-${player}`);
+ const par=await page.locator('h2').filter({hasText:/번 홀 · PAR/}).innerText().then(t=>Number(t.match(/PAR (\d+)/)[1]));
+ const value=stroke===''?'':Number(stroke)-par;
+ if(value!==''&&(value< -2||value>2))await group.locator('details').evaluate(el=>el.open=true);
+ await group.locator(`[data-value="${value}"]`).click();
+}
 const db = new PGlite();
 await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);
  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
@@ -286,23 +293,21 @@ try {
   assert.equal(await pages[0].locator("#shared-score-0").count(), 1);
   // No account has selected a slot: unbound members can edit every player and lock.
   for(let player=0;player<4;player++) {
-    await pages[1].locator(`#shared-score-${player}`).fill(String(player+4));
-    await pages[1].locator(`#shared-score-${player}`).press('Tab');
+    await setStroke(pages[1], player, String(player+4));
     await waitSaved(pages[1]); await waitSynced();
   }
   await pages[1].locator('#shared-near').selectOption('1');
   await waitSaved(pages[1]); await waitSynced();
   await pages[1].locator('[data-shared="lock"]').click();
   await waitSaved(pages[1]); await waitSynced();
-  assert.equal(await pages[1].locator('#shared-score-1').isDisabled(),true);
+  assert.equal(await pages[1].locator('#shared-score-1 button').first().isDisabled(),true);
   assert.equal(await pages[1].locator('[data-shared="lock"]').isDisabled(),true);
   assert.equal((await db.query('select count(slot)::int n from public.golf_members')).rows[0].n,0);
   await pages[0].locator('[data-shared="lock"]').click();
   await waitSaved(pages[0]); await waitSynced();
   // Restore this isolated fixture's inputs before the pre-existing preservation checks.
   for(let player=0;player<4;player++) {
-    await pages[1].locator(`#shared-score-${player}`).fill(String(round.holes[0].scores[player]));
-    await pages[1].locator(`#shared-score-${player}`).press('Tab');
+    await setStroke(pages[1], player, String(round.holes[0].scores[player]));
     await waitSaved(pages[1]); await waitSynced();
   }
   await pages[1].locator('#shared-near').selectOption('');
@@ -361,13 +366,13 @@ try {
   await pages[1].locator("#shared-my-name").fill("민수");
   await pages[1].locator('[data-shared="rename"]').click();
   await waitSaved(pages[1]); await waitSynced();
-  assert.equal(await pages[1].locator('label[for="shared-score-1"]').innerText(),round.players[1]);
+  assert.equal(await pages[1].locator('#shared-player-label-1').innerText(),round.players[1]);
   await pages[0].locator('#shared-player-name-1').fill('민수');
   await pages[0].locator('[data-shared="player-name"][data-player="1"]').click();
   await waitSaved(pages[0]); await waitSynced();
   await waitSaved(pages[1]); await waitSynced();
   for (const p of pages.slice(0,4)) {
-    assert.match(await p.locator('label[for="shared-score-1"]').innerText(), /민수/);
+    assert.match(await p.locator('#shared-player-label-1').innerText(), /민수/);
     assert.match(await p.locator(".score.current-hussein").innerText(), /현재 후세인/);
     assert.equal(await p.locator(".score.current-hussein").evaluate(e=>getComputedStyle(e).backgroundColor), "rgb(255, 244, 204)");
   }
@@ -377,13 +382,12 @@ try {
   for (let i = 0; i < 4; i++) {
     const p = pages[i];
     await p.waitForTimeout(100);
-    await p.locator(`#shared-score-${i}`).fill(String([3, 4, 6, 7][i]));
-    await p.locator(`#shared-score-${i}`).press("Tab");
+    await setStroke(p, i, String([3, 4, 6, 7][i]));
     await waitSaved(p);
     await waitSynced();
   }
   await pages[3].waitForFunction(
-    () => document.querySelector("#shared-score-1").value === "4",
+    () => document.querySelector("#shared-score-1").dataset.stroke === "4",
   );
   for (const p of pages.slice(0,4)) {
     assert.match(await p.locator(".result").innerText(), /후세인 승/);
@@ -397,7 +401,7 @@ try {
   await pages[1].locator('[data-shared="lock"]').click();
   await waitSaved(pages[1]);
   await pages[0].waitForFunction(
-    () => document.querySelector("#shared-score-0").disabled,
+    () => document.querySelector("#shared-score-0").querySelector("button").disabled,
   );
   assert.equal(
     await pages[1].locator('[data-shared="lock"]').isDisabled(),
@@ -405,13 +409,12 @@ try {
   );
   await pages[0].locator('[data-shared="lock"]').click();
   await pages[3].waitForFunction(
-    () => !document.querySelector("#shared-score-0").disabled,
+    () => !document.querySelector("#shared-score-0").querySelector("button").disabled,
   );
-  await pages[3].locator("#shared-score-0").fill("8");
-  await pages[3].locator("#shared-score-0").press("Tab");
+  await setStroke(pages[3], 0, "8");
   await waitSaved(pages[3]);
   await pages[0].waitForFunction(
-    () => document.querySelector("#shared-score-0").value === "8",
+    () => document.querySelector("#shared-score-0").dataset.stroke === "8",
   );
   await pages[0].locator('[data-page="history"]').click();
   await pages[0]
@@ -422,11 +425,10 @@ try {
     (await pages[0].locator(".shared-panel").innerText()).includes("3 → 8"),
   );
   await contexts[3].setOffline(true);
-  await pages[3].locator("#shared-score-0").fill("9");
-  await pages[3].locator("#shared-score-0").press("Tab");
+  await setStroke(pages[3], 0, "9");
   await pages[3].getByRole("alert").waitFor();
   await waitSaved(pages[3]);
-  assert.equal(await pages[3].locator("#shared-score-0").inputValue(), "8");
+  assert.equal(await pages[3].locator("#shared-score-0").getAttribute("data-stroke"), "8");
   await contexts[3].setOffline(false);
   await pages[0].locator('[data-shared="lobby"]').click();
   await pages[0].locator('[data-shared="list"]').click();
@@ -458,8 +460,7 @@ try {
   assert.deepEqual(await pages[0].evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   // New comparison must also be shown by the shared UI (old comparison gave Hussein a win).
   for(let player=0;player<4;player++) {
-    await pages[0].locator(`#shared-score-${player}`).fill(String([3,5,9,4][player]));
-    await pages[0].locator(`#shared-score-${player}`).press('Tab');
+    await setStroke(pages[0], player, String([3,5,9,4][player]));
     await waitSaved(pages[0]);
   }
   assert.match(await pages[0].locator('.result').innerText(),/연합군 승/);
@@ -490,7 +491,7 @@ try {
   assert.equal(await pages[1].locator('[data-shared="lock"]').isDisabled(),false);
   await pages[1].locator('[data-shared="lock"]').click();
   await waitSaved(pages[1]);
-  assert.equal(await pages[1].locator('#shared-score-0').isDisabled(),true);
+  assert.equal(await pages[1].locator('#shared-score-0 button').first().isDisabled(),true);
   await pages[1].locator('[data-shared="lobby"]').click();
   await pages[1].locator('#shared-code').fill(code);
   await pages[1].locator('[data-shared="join"]').click();
@@ -595,10 +596,9 @@ try {
   assert.equal(await pwa.getByRole("alert").count(), 0,
     await pwa.locator(".shared-panel").innerText());
   assert.equal(await pwa.locator("#shared-slot").count(),0);
-  await pwa.locator("#shared-score-0").fill("10");
-  await pwa.locator("#shared-score-0").press("Tab");
+  await setStroke(pwa, 0, "10");
   await waitSaved(pwa);
-  await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").value === "10");
+  await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").dataset.stroke === "10");
   assert.match(await pwa.locator("#shared-checks").textContent(), /RPC: 실행 확인됨/);
   assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   await pwaContext.close();

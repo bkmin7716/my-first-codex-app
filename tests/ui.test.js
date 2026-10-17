@@ -26,3 +26,16 @@ test('화면 7 현재·다음 후세인 구분 및 미완료·무승부·연합�
  assert.match(root.innerHTML,/연합군 승/);assert.equal((root.innerHTML.match(/✓ 승리/g)||[]).length,3);
  assert.equal((root.innerHTML.match(/이번 홀 2점 · 200,000 VND/g)||[]).length,3);
 });
+
+test('PAR 버튼으로 여러 선수 입력·확장·미입력·다시 불러오기',async()=>{
+ for(const mode of ['normal','hussein']){
+  await click({act:'new-'+mode});await click({act:'play'});
+  assert.match(root.innerHTML,/PAR 4/);
+  for(let i=0;i<4;i++)await click({relative:String(i),value:'0'});
+  let round=JSON.parse(memory.value).rounds[0];assert.deepEqual(round.holes[0].scores,[4,4,4,4]);
+  await click({relative:'0',value:'-3'});await click({relative:'1',value:'4'});
+  round=JSON.parse(memory.value).rounds[0];assert.deepEqual(round.holes[0].scores,[1,8,4,4]);
+  await click({relative:'0',value:''});assert.equal(JSON.parse(memory.value).rounds[0].holes[0].scores[0],null);
+  await click({view:'summary'});assert.match(root.innerHTML,/OUT/);assert.match(root.innerHTML,/IN/);assert.match(root.innerHTML,/TOTAL/);
+ }
+});

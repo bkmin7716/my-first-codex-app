@@ -50,3 +50,15 @@ export function calculate(r){
  const collected=(r.cash||[]).filter(x=>x.type==='collect').reduce((s,x)=>s+x.amount,0),refunded=(r.cash||[]).filter(x=>x.type==='refund').reduce((s,x)=>s+x.amount,0),fund=DEPOSIT*4+collected-refunded;
  return {holes,points,second,totals,carry,post:settle(points,r.rate),pre:{fund,expected,actual,unpaid:holes.reduce((s,h)=>s+h.expected.reduce((a,b,i)=>a+Math.max(0,b-h.paid[i]),0),0),balance:Math.max(0,fund-actual),shortage:Math.max(0,expected-fund),carryAmount:carry*r.rate,received:r.players.map((_,i)=>holes.reduce((s,h)=>s+h.paid[i],0))},complete:holes.every(h=>h.confirmed)};
 }
+
+// UI adapters only: persisted and synchronized scores remain absolute strokes.
+export const relativeText = value => value === null ? '—' : value > 0 ? `+${value}` : String(value);
+export function relativeTotals(round, player) {
+ const part = holes => {const entered=holes.filter(h=>h.scores[player]!==null);return entered.length?entered.reduce((sum,h)=>sum+h.scores[player]-h.par,0):null;};
+ return {out:part(round.holes.slice(0,9)),in:part(round.holes.slice(9)),total:part(round.holes)};
+}
+export function scoreButtons(par, stroke, player, shared=false, blocked=false) {
+ const attr=shared?'data-shared-relative':'data-relative';
+ const button=value=>`<button type="button" ${attr}="${player}" data-value="${value===null?'':value}" aria-pressed="${value===null?stroke===null:stroke!==null&&stroke-par===value}" ${blocked||value!==null&&(par+value<1||par+value>30)?'disabled':''}>${value===null?'미입력':relativeText(value)}</button>`;
+ return `<div class="relative-score" ${shared?`id="shared-score-${player}"`:``} data-stroke="${stroke??''}" role="group" ${shared?`aria-labelledby="shared-player-label-${player}"`:`aria-label="${player+1}번 선수 PAR 대비 점수"`}><small aria-live="polite">${stroke===null?'미입력':relativeText(stroke-par)+(stroke===par?' (파)':'')}</small><div class="score-buttons">${[-2,-1,0,1,2].map(button).join('')}</div><details><summary>확장 입력 (−3 이하 / +3 이상)</summary><div class="score-buttons">${Array.from({length:30},(_,i)=>i+1-par).filter(v=>v< -2||v>2).map(button).join('')}</div></details>${button(null)}</div>`;
+}
