@@ -29,3 +29,8 @@ npm start
 `npm run preview:scorecard`는 임시 PGlite DB로 일반/후세인 공동 게임을 확인합니다.
 출력된 participant 주소를 다른 탭에서 열어 코드로 참여할 수 있습니다. 운영 Supabase에는 접속하지 않습니다.
 일반 게임 공동 입력의 SQL 순서와 배포 전 점검은 `RELEASE_CHECKLIST.md`를 따릅니다.
+
+## 최종 운영 준비
+
+선택된 점수 버튼 재클릭으로 삭제하는 승인 버전을 기준으로 준비합니다.
+SQL/검증/복구/Pages 절차는 RELEASE_CHECKLIST.md, 검증 범위와 CI 보완은 RELEASE_PREPARATION_REPORT.md를 확인하세요.

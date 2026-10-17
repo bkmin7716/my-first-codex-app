@@ -537,7 +537,14 @@ try {
   await pages[4].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='6');
   await setStroke(pages[4],1,'5');await waitSaved(pages[4]);
   await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='5');
-  const normalMembers=(await db.query('select slot from public.golf_members where game_id=(select id from public.golf_games where code=$1)',[normalCode])).rows;
+  // Inspect test storage in the same queue as RPCs. A direct read can inherit
+  // another browser's authenticated role/RLS and report zero members in WebKit.
+  const memberInspection=queue.then(async()=>{
+    await db.exec('reset role');
+    return (await db.query('select slot from public.golf_members where game_id=(select id from public.golf_games where code=$1)',[normalCode])).rows;
+  });
+  queue=memberInspection.catch(()=>{});
+  const normalMembers=await memberInspection;
   assert.equal(normalMembers.length,2);assert.ok(normalMembers.every(m=>m.slot===null));
   await pages[4].locator('[data-shared-relative="1"][data-value="1"]').click();await waitSaved(pages[4]);
   await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='');

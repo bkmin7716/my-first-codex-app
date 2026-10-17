@@ -32,6 +32,9 @@ test('14 fixture games / 23 members / 131 audits remain byte-for-byte unchanged 
   const metadata=async()=>(await db.query(`select (select jsonb_agg(jsonb_build_array(oid,proowner,proacl) order by oid) from pg_proc where proname in ('golf_validate','golf_create','golf_join','golf_mutate')) funcs,
    (select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p where schemaname='public') policies`)).rows[0];
   const meta=await metadata();
+  const readonlySql=readFileSync(new URL('../supabase/003-readonly-snapshot.sql',import.meta.url),'utf8');
+  const inspectionBefore=(await db.exec(readonlySql)).filter(r=>r.fields?.length);
+  assert.deepEqual(await snapshot(),before);
   const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8');
   await db.exec(migration);await db.exec(migration);
   const patch=readFileSync(new URL('../supabase/002-shared-score-access.sql',import.meta.url),'utf8');
@@ -39,6 +42,12 @@ test('14 fixture games / 23 members / 131 audits remain byte-for-byte unchanged 
   const preview=readFileSync(new URL("../supabase/003-normal-shared-scorecard.sql",import.meta.url),"utf8");
   await db.exec(preview);await db.exec(preview);
   assert.deepEqual(await snapshot(),before);assert.deepEqual(await metadata(),meta);
+  const inspectionAfter=(await db.exec(readonlySql)).filter(r=>r.fields?.length);
+  assert.deepEqual(inspectionAfter[0].rows,inspectionBefore[0].rows);
+  // Function bodies intentionally change; signatures/OIDs/owners/ACL/settings do not.
+  const attrs=rows=>rows.map(({definition,...row})=>row);
+  assert.deepEqual(attrs(inspectionAfter[1].rows),attrs(inspectionBefore[1].rows));
+  assert.deepEqual(inspectionAfter.slice(2),inspectionBefore.slice(2));
   assert.equal((await db.query("select count(*)::int n from pg_indexes where schemaname='public' and indexname='golf_member_slot'")).rows[0].n,0);
   await db.exec(readFileSync(new URL('../supabase/001-player-slots-precheck.sql',import.meta.url),'utf8'));
   await db.exec(readFileSync(new URL('../supabase/001-player-slots-postcheck.sql',import.meta.url),'utf8'));
