@@ -264,7 +264,30 @@ try {
   await pages[4].locator('[data-shared="join"]').click();
   await pages[4].getByRole("alert").filter({ hasText: "참가 인원" }).waitFor();
   await waitSynced();
-  assert.equal(await pages[0].locator("#shared-score-0").count(), 0);
+  assert.equal(await pages[0].locator("#shared-score-0").count(), 1);
+  // No account has selected a slot: unbound members can edit every player and lock.
+  for(let player=0;player<4;player++) {
+    await pages[1].locator(`#shared-score-${player}`).fill(String(player+4));
+    await pages[1].locator(`#shared-score-${player}`).press('Tab');
+    await waitSaved(pages[1]); await waitSynced();
+  }
+  await pages[1].locator('#shared-near').selectOption('1');
+  await waitSaved(pages[1]); await waitSynced();
+  await pages[1].locator('[data-shared="lock"]').click();
+  await waitSaved(pages[1]); await waitSynced();
+  assert.equal(await pages[1].locator('#shared-score-1').isDisabled(),true);
+  assert.equal(await pages[1].locator('[data-shared="lock"]').isDisabled(),true);
+  assert.equal((await db.query('select count(slot)::int n from public.golf_members')).rows[0].n,0);
+  await pages[0].locator('[data-shared="lock"]').click();
+  await waitSaved(pages[0]); await waitSynced();
+  // Restore this isolated fixture's inputs before the pre-existing preservation checks.
+  for(let player=0;player<4;player++) {
+    await pages[1].locator(`#shared-score-${player}`).fill(String(round.holes[0].scores[player]));
+    await pages[1].locator(`#shared-score-${player}`).press('Tab');
+    await waitSaved(pages[1]); await waitSynced();
+  }
+  await pages[1].locator('#shared-near').selectOption('');
+  await waitSaved(pages[1]); await waitSynced();
   await pages[1].locator("#shared-slot").selectOption("3");
   await pages[1].locator("#shared-slot").evaluate(el => el.blur());
   for (let i=0;i<4;i++) {
@@ -392,7 +415,7 @@ try {
   await pages[0].locator('[data-shared="create"]').click();
   await pages[0].getByRole("heading", {name:"공동 라운드",exact:true}).waitFor();
   assert.equal(await pages[0].locator("#shared-slot").inputValue(), "");
-  assert.equal(await pages[0].locator("#shared-score-0").count(),0);
+  assert.equal(await pages[0].locator("#shared-score-0").count(),1);
   assert.deepEqual(await pages[0].evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   // Existing null-flag Hussein games keep the original no-slot workflow.
   const legacyRound=createRound("hussein");legacyRound.sharedSlots=true;

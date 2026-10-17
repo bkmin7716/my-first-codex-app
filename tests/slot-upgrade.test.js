@@ -34,6 +34,8 @@ test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by 
   const meta=await metadata();
   const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8');
   await db.exec(migration);await db.exec(migration);
+  const patch=readFileSync(new URL('../supabase/002-shared-score-access.sql',import.meta.url),'utf8');
+  await db.exec(patch);await db.exec(patch);
   assert.deepEqual(await snapshot(),before);assert.deepEqual(await metadata(),meta);
   assert.equal((await db.query("select count(*)::int n from pg_indexes where schemaname='public' and indexname='golf_member_slot'")).rows[0].n,0);
   await db.exec(readFileSync(new URL('../supabase/001-player-slots-precheck.sql',import.meta.url),'utf8'));

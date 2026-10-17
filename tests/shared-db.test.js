@@ -51,11 +51,39 @@ test('owner roster preserved at create/join/claim; reconnect identity; competing
  assert.equal(g.round.players[1],'선수명 수정');assert.deepEqual(g.round.holes,r.holes);assert.deepEqual(g.round.settled,r.settled);assert.deepEqual(calculate(g.round).post.amounts,amounts);
 });
 
-test('shared lock needs all four; original score/Near/money/locks/finalize/audit and RLS preserved',async()=>{
+test('unbound members edit all four scores and Near, and lock without other players connecting',async()=>{
+ let g=await rpc(0,'golf_create',[rosterRound(),'생성자']);
+ g=await rpc(1,'golf_join',[g.code,'미연결 참가자']);
+ for(const actor of [0,1]) {
+  for(let player=0;player<4;player++)g=await mutate(actor,g,'score',{hole:0,player,value:player+3+actor});
+  for(let player=0;player<4;player++)g=await mutate(actor,g,'near',{hole:0,value:player});
+  g=await mutate(actor,g,'lock',{hole:0,value:true});
+  assert.deepEqual(g.locked_holes,[0]);
+  await assert.rejects(()=>mutate(1,g,'lock',{hole:0,value:false}),/생성자/);
+  await assert.rejects(()=>mutate(actor,g,'score',{hole:0,player:1,value:4}),/잠긴 홀/);
+  await assert.rejects(()=>mutate(actor,g,'near',{hole:0,value:1}),/잠긴 홀/);
+  g=await mutate(0,g,'lock',{hole:0,value:false});
+ }
+ g=await mutate(0,g,'slot',{value:0});
+ // Exact reported case: owner bound to first player; three others unbound.
+ for(let player=0;player<4;player++)g=await mutate(0,g,'score',{hole:0,player,value:player+3});
+ g=await mutate(1,g,'near',{hole:0,value:1});
+ g=await mutate(1,g,'lock',{hole:0,value:true});
+ const members=(await as(0,'select slot from public.golf_members where game_id=$1',[g.id])).rows;
+ assert.equal(members.filter(m=>m.slot!=null).length,1);
+ assert.deepEqual(g.round.players,rosterRound().players);
+ const before=await snapshot();
+ await assert.rejects(()=>mutate(2,g,'score',{hole:0,player:1,value:5}),/참가자/);
+ for(const [a,d] of [['player_name',{player:1,value:'탈취'}],['initial',{value:[0,1,2,3]}],['rate',{value:1}],['cash',{value:[]}],['finalize',{value:false}]])await assert.rejects(()=>mutate(1,g,a,d),/생성자/);
+ await assert.rejects(()=>mutate(1,g,'slot',{value:0}),/이미 연결/);
+ assert.equal(await snapshot(),before);
+});
+
+test('shared gameplay without slot prerequisites; original score/Near/money/locks/finalize/audit and RLS preserved',async()=>{
  let g=await rpc(0,'golf_create',[rosterRound(),'계정0']);
- await assert.rejects(()=>mutate(0,g,'score',{hole:0,player:0,value:4}),/본인 선수/);
+ g=await mutate(0,g,'score',{hole:0,player:0,value:4});
  g=await mutate(0,g,'slot',{value:3});
- await assert.rejects(()=>mutate(0,g,'lock',{hole:1,value:true}),/선수 슬롯/);
+ await assert.rejects(()=>mutate(0,g,'lock',{hole:1,value:true}),/모든 선수/);
  for(let i=1;i<4;i++){g=await rpc(i,'golf_join',[g.code,`계정${i}`]);g=await mutate(i,g,'slot',{value:[3,1,2,0][i]});}
  await assert.rejects(()=>rpc(4,'golf_join',[g.code,'다섯째']),/모두 찼습니다/);
  for(const table of ['golf_games','golf_members','golf_audit'])assert.equal((await as(4,`select * from public.${table} where ${table==='golf_games'?'id':'game_id'}=$1`,[g.id])).rows.length,0);
@@ -95,7 +123,7 @@ test('invalid JSON and roster inputs produce P0001 without writes',async()=>{
  for(const name of [null,'','   ','x'.repeat(41)])await assert.rejects(()=>rpc(0,'golf_create',[r,name]),e=>e.code==='P0001');
  for(const players of [['','','',''],['A','B','C']])await assert.rejects(()=>rpc(0,'golf_create',[{...r,players},'계정']),e=>e.code==='P0001');
  let g=await connectAll(await rpc(0,'golf_create',[r,'계정0']));
- for(const [a,d] of [['score',[]],['score',null],['score',{hole:'x',player:0,value:3}],['score',{hole:0,player:1.5,value:3}],['score',{hole:0,player:0,value:31}],['paid',{hole:0,value:[{},1,2,3]}],['settled',{player:'x',value:0}],['lock',{hole:0,value:'true'}],['rate',{value:{}}],['initial',{value:[0,0,2,3]}],['cash',{value:[{type:'collect',amount:{}}]}]]){
+ for(const [a,d] of [['score',[]],['score',null],['score',{hole:'x',player:0,value:3}],['score',{hole:0,player:1.5,value:3}],['score',{hole:0,player:0,value:31}],['near',{hole:0,value:'1'}],['near',{hole:0,value:4}],['near',{hole:0,value:{}}],['near',{hole:1,value:0}],['paid',{hole:0,value:[{},1,2,3]}],['settled',{player:'x',value:0}],['lock',{hole:0,value:'true'}],['rate',{value:{}}],['initial',{value:[0,0,2,3]}],['cash',{value:[{type:'collect',amount:{}}]}]]){
  const before=await snapshot();await assert.rejects(()=>mutate(0,g,a,d),e=>e.code==='P0001');assert.equal(await snapshot(),before);}
  await db.exec('reset role');await db.query("update public.golf_games set round=jsonb_set(round,'{players}','{}') where id=$1",[g.id]);await assert.rejects(()=>mutate(0,g,'slot',{value:1}),e=>e.code==='P0001');
 });
