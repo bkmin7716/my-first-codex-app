@@ -207,15 +207,27 @@ test('preview normal migration preserves all rows, allows any registered partici
  for(let n=1;n<=4;n++){
   let g=await rpc(0,'golf_create',[{...createRound('normal',n),sharedSlots:true,slotPolicyVersion:1},'생성자']);
   assert.equal(g.round.sharedSlots,false);assert.equal(g.round.slotPolicyVersion,undefined);
-  for(let actor=1;actor<5;actor++)g=await rpc(actor,'golf_join',[g.code,`참가자${actor}`]);
-  for(let p=0;p<n;p++)g=await mutate(4,g,'score',{hole:17,player:p,value:p+4});
+  for(let actor=1;actor<4;actor++)g=await rpc(actor,'golf_join',[g.code,`참가자${actor}`]);
+  const full=await snapshot();
+  await assert.rejects(()=>rpc(4,'golf_join',[g.code,'다섯째']),/참가 인원/);assert.equal(await snapshot(),full);
+  assert.equal((await rpc(1,'golf_join',[g.code,'재접속'])).revision,g.revision);
+  for(let actor=0;actor<4;actor++)for(let p=0;p<n;p++)g=await mutate(actor,g,'score',{hole:17,player:p,value:p+4});
+  g=await mutate(1,g,'score',{hole:0,player:0,value:null});
+  g=await mutate(2,g,'score',{hole:0,player:0,value:4});
   assert.equal(g.round.holes[17].scores.length,n);
   assert.deepEqual(g.round.holes[17].scores,Array.from({length:n},(_,i)=>i+4));
   assert.equal((await as(0,'select count(slot)::int n from public.golf_members where game_id=$1',[g.id])).rows[0].n,0);
-  await assert.rejects(()=>mutate(1,g,'slot',{value:0}),/생성자만/);
+  await assert.rejects(()=>mutate(1,g,'slot',{value:0}),/일반 게임/);
   await assert.rejects(()=>mutate(1,g,'player_name',{player:0,value:'탈취'}),/생성자만/);
-  g=await mutate(0,g,'lock',{hole:17,value:true});
-  await assert.rejects(()=>mutate(1,g,'score',{hole:17,player:0,value:5}),/잠긴 홀/);
+  for(const actor of [0,1,2,3])for(const action of ['near','lock','finalize','initial','slot','rate','paid','settled','cash'])for(const value of [true,false]){
+   const unchanged=await snapshot();
+   await assert.rejects(()=>mutate(actor,g,action,{hole:17,player:0,value}),/일반 게임/);
+   assert.equal(await snapshot(),unchanged);
+  }
+  const unchanged=await snapshot();
+  await assert.rejects(()=>mutate(4,g,'score',{hole:0,player:0,value:5}),/참가자만/);
+  await assert.rejects(()=>mutate(1,g,'score',{hole:0,player:0,value:5},g.revision-1),/다른 참가자/);
+  assert.equal(await snapshot(),unchanged);
  }
  // Legacy path remains byte-for-byte equivalent; no policy version is stamped.
  let legacy=await legacyGame(createRound('normal',4));legacy=await rpc(1,'golf_join',[legacy.code,'참가자']);

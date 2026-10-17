@@ -30,10 +30,18 @@ async function state(db){await db.exec('reset role');return stable((await db.que
 (select jsonb_agg(to_jsonb(a) order by id) from public.golf_audit a) audit`)).rows[0]);}
 async function call(db,user,name,args){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[user==null?'':users[user]]);await db.exec('set role authenticated');try{return {ok:stable((await db.query(`select to_jsonb(public.${name}(${args.map((_,i)=>'$'+(i+1)).join(',')})) g`,args)).rows[0].g)};}catch(e){return {error:{code:e.code,message:e.message}};}}
 
-test('original vs migrated legacy normal/Hussein RPCs: same results, errors, permissions and mutations',async()=>{
+test('original vs migrated legacy normal/Hussein RPCs: Hussein exact compatibility and intentional normal action restrictions',async()=>{
  const before=await setup(false),after=await setup(true);let checks=0;
  try{
-  async function compare(user,name,args,label){const a=await call(before,user,name,args),b=await call(after,user,name,args);assert.deepEqual(b,a,label);assert.deepEqual(await state(after),await state(before),label+' state');checks++;return b;}
+  async function compare(user,name,args,label){
+   const fixture=fixtures.find(f=>f.id===args[0]);
+   if(name==='golf_mutate'&&fixture?.r.mode==='normal'&&['near','lock','finalize','initial','slot','rate','paid','settled','cash'].includes(args[2])){
+    const unchanged=await state(after),b=await call(after,user,name,args);
+    assert.equal(b.error?.code,'P0001',label);assert.match(b.error.message,/일반 게임/);
+    assert.deepEqual(await state(after),unchanged,label+' rejection must not write');
+    assert.deepEqual(await state(after),await state(before),label+' unchanged legacy data');checks++;return b;
+   }
+   const a=await call(before,user,name,args),b=await call(after,user,name,args);assert.deepEqual(b,a,label);assert.deepEqual(await state(after),await state(before),label+' state');checks++;return b;}
   for(const [i,{id,r}] of fixtures.entries()){
    const code=`LEGACY${String(i).padStart(6,'0')}`;
    await compare(1,'golf_join',[code,'  참가자1  '],'legacy join including normal');
@@ -67,6 +75,6 @@ test('original vs migrated legacy normal/Hussein RPCs: same results, errors, per
    await change(1,'score',{hole:0,player:0,value:4});
    await change(0,'finalize',{value:false});
   }
-  assert.ok(checks>=250);console.log(`PASS: ${checks} original/migrated legacy RPC comparisons plus state comparisons`);
+  assert.ok(checks>=250);console.log(`PASS: ${checks} legacy RPC checks: exact Hussein/normal score compatibility and explicit normal action rejections`);
  }finally{await before.close();await after.close();}
 });

@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 import {createRound} from '../engine.js';
 
-test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by repeated versioned migration',async()=>{
+test('14 fixture games / 19 members / 36 audits remain byte-for-byte unchanged by repeated versioned migration',async()=>{
  const db=new PGlite();
  try {
   await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);
@@ -17,7 +17,7 @@ test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by 
   for(const id of ids)await db.query('insert into auth.users values($1)',[id]);
   async function rpc(i,name,args){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[i]]);await db.exec('set role authenticated');return (await db.query(`select to_jsonb(public.${name}(${args.map((_,i)=>'$'+(i+1)).join(',')})) g`,args)).rows[0].g;}
   const games=[];
-  for(let i=0;i<8;i++){
+  for(let i=0;i<14;i++){
    const r=createRound('hussein');r.sharedSlots=i<5?true:null;r.holes[0].par=3;r.holes[0].paid=[1,2,3,4];r.settled=[10,20,30,40];
    let g=await rpc(0,'golf_create',[r,'생성자']);if(i<5)g=await rpc(1,'golf_join',[g.code,'참가자']);games.push(g);
   }
@@ -27,7 +27,7 @@ test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by 
    (select jsonb_agg(to_jsonb(g) order by id) from public.golf_games g) games,
    (select jsonb_agg(to_jsonb(m) order by game_id,user_id) from public.golf_members m) members,
    (select jsonb_agg(to_jsonb(a) order by id) from public.golf_audit a) audit`)).rows[0];
-  const before=await snapshot();assert.equal(before.games.length,8);assert.equal(before.members.length,13);assert.equal(before.audit.length,30);
+  const before=await snapshot();assert.equal(before.games.length,14);assert.equal(before.members.length,19);assert.equal(before.audit.length,36);
   assert.equal(before.games.filter(g=>g.round.sharedSlots===true).length,5);assert.ok(before.members.every(m=>m.slot===null));
   const metadata=async()=>(await db.query(`select (select jsonb_agg(jsonb_build_array(oid,proowner,proacl) order by oid) from pg_proc where proname in ('golf_validate','golf_create','golf_join','golf_mutate')) funcs,
    (select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p where schemaname='public') policies`)).rows[0];
