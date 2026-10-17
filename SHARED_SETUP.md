@@ -104,3 +104,9 @@ Chromium의 `setOffline(true)` 새로고침 검사와 모든 엔진의 공동 �
 정책 버전 안내: 새 공동 게임은 `slotPolicyVersion: 1`을 서버에서 저장합니다. 기존 게임은 `sharedSlots: true`여도 버전이 없으면 선수 연결 없이 기존 입력·잠금·정산을 유지합니다. 운영 적용 전후 점검과 SQL 실행 순서는 `supabase/UPGRADE.md`를 확인하세요.
 
 기존 일반 게임에는 단독 관리 제한을 소급 적용하지 않습니다. gamePolicyVersion과 slotPolicyVersion이 모두 없는 게임의 참여·수정 권한과 미지원 액션 처리는 원본 SQL을 따릅니다.
+
+## 선수 선택 참가 UI (별도 승인 대기)
+
+feature/code-player-join 브랜치는 상단 중복 진입 버튼을 제거하고 코드 조회 후 등록 선수를 선택해 참가합니다.
+추가 SQL 004-code-player-join.sql 및 기존 계정/정원/보안/복구 주의사항은 PLAYER_JOIN_REVIEW.md를 참조하세요.
+기존 함수·RLS를 유지하는 추가 RPC이며 SQL을 먼저 승인/적용한 뒤 UI를 배포해야 합니다. 자동 적용하지 않습니다.
