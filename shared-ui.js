@@ -309,7 +309,8 @@ panel.addEventListener("click", (e) => {
   if (!b || busy) return;
   if (b.dataset.sharedRelative !== undefined) {
     const revision=api.game.revision, currentHole=hole, par=api.game.round.holes[currentHole].par;
-    const value=b.dataset.value===''?null:par+Number(b.dataset.value);
+    const candidate=par+Number(b.dataset.value);
+    const value=api.game.round.holes[currentHole].scores[Number(b.dataset.sharedRelative)]===candidate?null:candidate;
     run(()=>mutate("score",{hole:currentHole,player:Number(b.dataset.sharedRelative),value},revision));
     return;
   }

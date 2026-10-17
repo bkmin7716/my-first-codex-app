@@ -9,6 +9,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { createRound } from "../engine.js";
 async function setStroke(page, player, stroke) {
  const group=page.locator(`#shared-score-${player}`);
+ if(await group.getAttribute('data-stroke')===String(stroke))return;
  const par=await page.locator('h2').filter({hasText:/번 홀 · PAR/}).innerText().then(t=>Number(t.match(/PAR (\d+)/)[1]));
  const value=stroke===''?'':Number(stroke)-par;
  if(value!==''&&(value< -1||value>4))await group.locator('details').evaluate(el=>el.open=true);
@@ -302,6 +303,11 @@ try {
     await setStroke(pages[1], player, String(player+4));
     await waitSaved(pages[1]); await waitSynced();
   }
+  assert.equal(await pages[1].locator('[data-shared-relative][data-value=""]').count(),0);
+  await pages[1].locator('[data-shared-relative="0"][data-value="1"]').click();await waitSaved(pages[1]);await waitSynced();
+  assert.equal(await pages[0].locator('#shared-score-0').getAttribute('data-stroke'),'');
+  assert.equal(await pages[0].locator('#shared-score-0 > small').innerText(),'');
+  await setStroke(pages[1],0,'4');await waitSaved(pages[1]);await waitSynced();
   // Two independent accounts edit the same score in both directions, before any slot claim.
   await setStroke(pages[1],0,'5');await waitSaved(pages[1]);await waitSynced();
   assert.equal(await pages[0].locator('#shared-score-0').getAttribute('data-stroke'),'5');
@@ -533,6 +539,11 @@ try {
   await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='5');
   const normalMembers=(await db.query('select slot from public.golf_members where game_id=(select id from public.golf_games where code=$1)',[normalCode])).rows;
   assert.equal(normalMembers.length,2);assert.ok(normalMembers.every(m=>m.slot===null));
+  await pages[4].locator('[data-shared-relative="1"][data-value="1"]').click();await waitSaved(pages[4]);
+  await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='');
+  assert.equal(await pages[0].locator('#shared-score-1 > small').innerText(),'');
+  await setStroke(pages[0],1,'5');await waitSaved(pages[0]);
+  await pages[4].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='5');
   await pages[4].locator('[data-shared-hole="17"]').click();
   await setStroke(pages[4],0,'6');await waitSaved(pages[4]);
   await pages[0].locator('[data-shared-hole="17"]').click();
