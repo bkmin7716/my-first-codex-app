@@ -11,7 +11,7 @@ async function setStroke(page, player, stroke) {
  const group=page.locator(`#shared-score-${player}`);
  const par=await page.locator('h2').filter({hasText:/번 홀 · PAR/}).innerText().then(t=>Number(t.match(/PAR (\d+)/)[1]));
  const value=stroke===''?'':Number(stroke)-par;
- if(value!==''&&(value< -1||value>5))await group.locator('details').evaluate(el=>el.open=true);
+ if(value!==''&&(value< -1||value>4))await group.locator('details').evaluate(el=>el.open=true);
  await group.locator(`[data-value="${value}"]`).click();
 }
 const db = new PGlite();
@@ -411,10 +411,10 @@ try {
   await pages[3].waitForFunction(
     () => !document.querySelector("#shared-score-0").querySelector("button").disabled,
   );
-  await setStroke(pages[3], 0, "8");
+  await setStroke(pages[3], 0, "7");
   await waitSaved(pages[3]);
   await pages[0].waitForFunction(
-    () => document.querySelector("#shared-score-0").dataset.stroke === "8",
+    () => document.querySelector("#shared-score-0").dataset.stroke === "7",
   );
   await pages[0].locator('[data-page="history"]').click();
   await pages[0]
@@ -422,13 +422,13 @@ try {
     .first()
     .waitFor();
   assert.ok(
-    (await pages[0].locator(".shared-panel").innerText()).includes("3 → 8"),
+    (await pages[0].locator(".shared-panel").innerText()).includes("3 → 7"),
   );
   await contexts[3].setOffline(true);
-  await setStroke(pages[3], 0, "7");
+  await setStroke(pages[3], 0, "6");
   await pages[3].getByRole("alert").waitFor();
   await waitSaved(pages[3]);
-  assert.equal(await pages[3].locator("#shared-score-0").getAttribute("data-stroke"), "8");
+  assert.equal(await pages[3].locator("#shared-score-0").getAttribute("data-stroke"), "7");
   await contexts[3].setOffline(false);
   await pages[0].locator('[data-shared="lobby"]').click();
   await pages[0].locator('[data-shared="list"]').click();
@@ -460,7 +460,7 @@ try {
   assert.deepEqual(await pages[0].evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   // New comparison must also be shown by the shared UI (old comparison gave Hussein a win).
   for(let player=0;player<4;player++) {
-    await setStroke(pages[0], player, String([3,5,9,4][player]));
+    await setStroke(pages[0], player, String([3,5,8,4][player]));
     await waitSaved(pages[0]);
   }
   assert.match(await pages[0].locator('.result').innerText(),/연합군 승/);
@@ -596,9 +596,9 @@ try {
   assert.equal(await pwa.getByRole("alert").count(), 0,
     await pwa.locator(".shared-panel").innerText());
   assert.equal(await pwa.locator("#shared-slot").count(),0);
-  await setStroke(pwa, 0, "8");
+  await setStroke(pwa, 0, "7");
   await waitSaved(pwa);
-  await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").dataset.stroke === "8");
+  await pages[1].waitForFunction(() => document.querySelector("#shared-score-0").dataset.stroke === "7");
   assert.match(await pwa.locator("#shared-checks").textContent(), /RPC: 실행 확인됨/);
   assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   await pwaContext.close();
