@@ -59,10 +59,6 @@ begin
  select name into who from public.golf_members where game_id=p_game and user_id=auth.uid();
  if who is null then raise exception '참가자만 수정할 수 있습니다'; end if;
  if p_revision is null or g.revision<>p_revision then raise exception '다른 참가자가 수정했습니다. 최신 내용을 확인 후 다시 입력하세요'; end if;
- -- Apply the normal-game action boundary to every policy version, without rewriting rows.
- if g.round->>'mode'='normal' and p_action in ('near','lock','finalize','initial','slot','rate','paid','settled','cash') then
-  raise exception '일반 게임에서는 점수 입력과 이름 변경만 지원합니다';
- end if;
  -- Exact pre-version mutation contract, including unsupported-action behavior.
  if coalesce(g.round->'slotPolicyVersion','null'::jsonb)='null'::jsonb and coalesce(g.round->'gamePolicyVersion','null'::jsonb)='null'::jsonb then
  if octet_length(p_detail::text)>100000 then raise exception '요청 크기 초과'; end if;
@@ -123,6 +119,13 @@ begin
  d:=p_detail||jsonb_build_object('before',before_value,'after',after_value,'revision',g.revision);
  insert into public.golf_audit(game_id,actor_id,actor_name,action,detail) values(g.id,auth.uid(),who,p_action,d);
  return g;
+ end if;
+ -- Only modern, slot-free normal games use the restricted action policy.
+ -- Versionless games have already returned through the unchanged legacy branch.
+ if g.round->>'mode'='normal' and g.round->'gamePolicyVersion'='1'::jsonb
+    and g.round->'slotPolicyVersion' is distinct from '1'::jsonb
+    and p_action in ('near','lock','finalize','initial','slot','rate','paid','settled','cash') then
+  raise exception '일반 게임에서는 점수 입력과 이름 변경만 지원합니다';
  end if;
  if jsonb_typeof(g.round->'players') is distinct from 'array' then raise exception '선수 배열 오류'; end if;
  n:=jsonb_array_length(g.round->'players');

@@ -219,6 +219,10 @@ test('preview normal migration preserves all rows, allows any registered partici
   assert.equal((await as(0,'select count(slot)::int n from public.golf_members where game_id=$1',[g.id])).rows[0].n,0);
   await assert.rejects(()=>mutate(1,g,'slot',{value:0}),/일반 게임/);
   await assert.rejects(()=>mutate(1,g,'player_name',{player:0,value:'탈취'}),/생성자만/);
+  const saved=structuredClone(g.round);
+  g=await mutate(0,g,'player_name',{player:0,value:'생성자 수정'});
+  const renamed=structuredClone(saved);renamed.players[0]='생성자 수정';assert.deepEqual(g.round,renamed);
+  g=await mutate(1,g,'name',{value:'참가자 표시 이름'});assert.deepEqual(g.round,renamed);
   for(const actor of [0,1,2,3])for(const action of ['near','lock','finalize','initial','slot','rate','paid','settled','cash'])for(const value of [true,false]){
    const unchanged=await snapshot();
    await assert.rejects(()=>mutate(actor,g,action,{hole:17,player:0,value}),/일반 게임/);
