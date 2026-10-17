@@ -23,3 +23,9 @@ npm start
 - 기본 `shared-config.js`는 빈 설정입니다. 운영 DB 연결 없이 로컬 화면을 미리볼 수 있습니다.
 
 배포, 운영 데이터 변경, main 브랜치 변경은 수행하지 않습니다.
+
+## 일반 공동 게임 및 운영 준비
+
+`npm run preview:scorecard`는 임시 PGlite DB로 일반/후세인 공동 게임을 확인합니다.
+출력된 participant 주소를 다른 탭에서 열어 코드로 참여할 수 있습니다. 운영 Supabase에는 접속하지 않습니다.
+일반 게임 공동 입력의 SQL 순서와 배포 전 점검은 `RELEASE_CHECKLIST.md`를 따릅니다.

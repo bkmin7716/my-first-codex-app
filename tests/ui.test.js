@@ -48,3 +48,15 @@ test('PAR 5 더블파 확장 입력은 10타로 저장된다',async()=>{
   await click({view:'summary'});assert.match(root.innerHTML,/OUT \+5 · IN — · TOTAL \+5/);
  }
 });
+test('일반 1~4인 PAR 카드: 입력/미입력 합계와 일반 메뉴 보존',async()=>{
+ for(let n=1;n<=4;n++){
+  await click({act:'new-normal'});await change({field:'count'},String(n));await click({act:'play'});
+  assert.equal((root.innerHTML.match(/class="relative-score"/g)||[]).length,n);
+  assert.doesNotMatch(root.innerHTML,/data-field="near"|data-view="settlement"|class="result|현재 후세인/);
+  await click({relative:'0',value:'0'});await click({hole:'17'});await click({relative:'0',value:'2'});
+  const round=JSON.parse(memory.value).rounds[0];assert.equal(round.holes[0].scores[0],4);assert.equal(round.holes[17].scores[0],6);
+  await click({view:'summary'});
+  assert.match(root.innerHTML,/data-total="out-0">0</);assert.match(root.innerHTML,/data-total="in-0">\+2</);assert.match(root.innerHTML,/data-total="total-0">\+2</);
+  if(n>1)assert.match(root.innerHTML,/data-total="total-1">—</);
+ }
+});

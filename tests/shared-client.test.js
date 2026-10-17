@@ -333,3 +333,12 @@ test('concurrent startup and game actions reuse one in-flight anonymous sign-in'
  await Promise.all([api.checkConnection(),api.identity(),api.identity()]);
  assert.equal(signins,1);assert.equal(api.userId,'owner');
 });
+
+test('normal shared creation supports 1-4 named players without a player-slot policy',async()=>{
+ for(let n=1;n<=4;n++){
+  const f=fixture(),api=new SharedGames(f.client);
+  try{await api.create({...createRound('normal',n),sharedSlots:true,slotPolicyVersion:1},'생성자');
+   const payload=f.calls[0].args.p_round;assert.equal(payload.players.length,n);assert.equal(payload.sharedSlots,false);assert.equal(payload.slotPolicyVersion,undefined);
+  }finally{api.stop();}
+ }
+});

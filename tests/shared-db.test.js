@@ -197,3 +197,27 @@ test('server stamps policy only on new shared creation and version cannot be cha
  const before=await snapshot();await assert.rejects(()=>mutate(0,g,'slotPolicyVersion',{value:1}),/지원하지/);assert.equal(await snapshot(),before);
  const normal=await rpc(0,'golf_create',[createRound('normal',2),'생성자']);assert.equal(normal.round.slotPolicyVersion,undefined);
 });
+
+test('preview normal migration preserves all rows, allows any registered participant to edit without slots',async()=>{
+ await db.exec('reset role');const before=await snapshot();
+ const patch=readFileSync(new URL('../supabase/003-normal-shared-scorecard.sql',import.meta.url),'utf8');
+ const metadata=(await db.query("select oid,proacl,proowner from pg_proc where proname in ('golf_create','golf_join','golf_mutate') order by oid")).rows;
+ await db.exec(patch);await db.exec(patch);assert.equal(await snapshot(),before);
+ assert.deepEqual((await db.query("select oid,proacl,proowner from pg_proc where proname in ('golf_create','golf_join','golf_mutate') order by oid")).rows,metadata);
+ for(let n=1;n<=4;n++){
+  let g=await rpc(0,'golf_create',[{...createRound('normal',n),sharedSlots:true,slotPolicyVersion:1},'생성자']);
+  assert.equal(g.round.sharedSlots,false);assert.equal(g.round.slotPolicyVersion,undefined);
+  for(let actor=1;actor<5;actor++)g=await rpc(actor,'golf_join',[g.code,`참가자${actor}`]);
+  for(let p=0;p<n;p++)g=await mutate(4,g,'score',{hole:17,player:p,value:p+4});
+  assert.equal(g.round.holes[17].scores.length,n);
+  assert.deepEqual(g.round.holes[17].scores,Array.from({length:n},(_,i)=>i+4));
+  assert.equal((await as(0,'select count(slot)::int n from public.golf_members where game_id=$1',[g.id])).rows[0].n,0);
+  await assert.rejects(()=>mutate(1,g,'slot',{value:0}),/생성자만/);
+  await assert.rejects(()=>mutate(1,g,'player_name',{player:0,value:'탈취'}),/생성자만/);
+  g=await mutate(0,g,'lock',{hole:17,value:true});
+  await assert.rejects(()=>mutate(1,g,'score',{hole:17,player:0,value:5}),/잠긴 홀/);
+ }
+ // Legacy path remains byte-for-byte equivalent; no policy version is stamped.
+ let legacy=await legacyGame(createRound('normal',4));legacy=await rpc(1,'golf_join',[legacy.code,'참가자']);
+ legacy=await mutate(1,legacy,'score',{hole:0,player:1,value:4});assert.equal(legacy.round.gamePolicyVersion,undefined);
+});
