@@ -66,6 +66,8 @@ PostgreSQL 테스트는 PGlite에서 실행합니다. 운영과 같은 8게임/1
 ## 003 최종 서버 정책 보완
 
 정책 버전이 모두 없거나 JSON null인 기존 게임은 mode와 관계없이 원본 레거시 분기로 먼저 처리합니다. 일반/후세인의 기존 점수·Near·잠금·정산·권한 동작을 유지합니다. 기존 행에 버전을 채우거나 상태를 변경하지 않습니다.
-신규 일반 게임은 gamePolicyVersion=1, sharedSlots=false, slotPolicyVersion 없음으로 생성됩니다. 등록 선수 1~4명과 별개로 생성자 포함 인증 계정 최대 4명이 참여하며 슬롯 연결 없이 전원 점수를 기록합니다. 다섯 번째 신규 계정은 거부하고 기존 참가자는 정원 도달 후에도 재접속할 수 있습니다.
-신규 일반 게임의 near/lock/finalize/initial/slot/rate/paid/settled/cash 요청은 생성자에게도 거부합니다. 이 제한은 레거시 분기 뒤에서 gamePolicyVersion=1 및 slotPolicyVersion!=1 조건으로만 적용합니다. 선수 이름 변경(player_name)은 생성자만, 계정 표시 이름(name)은 본인만 수정합니다. 후세인의 해당 액션과 권한은 그대로입니다.
+신규 일반 게임은 gamePolicyVersion=1, normalScorePolicyVersion=1, sharedSlots=false, slotPolicyVersion 없음으로 생성됩니다. 등록 선수 1~4명과 별개로 생성자 포함 인증 계정 최대 4명이 참여하며 슬롯 연결 없이 전원 점수를 기록합니다. 다섯 번째 신규 계정은 거부하고 기존 참가자는 정원 도달 후에도 재접속할 수 있습니다.
+신규 일반 게임의 near/lock/finalize/initial/slot/rate/paid/settled/cash 요청은 생성자에게도 거부합니다. 이 제한은 레거시 분기 뒤에서 normalScorePolicyVersion=1 및 slotPolicyVersion!=1 조건으로만 적용합니다. 선수 이름 변경(player_name)은 생성자만, 계정 표시 이름(name)은 본인만 수정합니다. 후세인의 해당 액션과 권한은 그대로입니다.
 거부 요청은 게임 행·revision·감사 기록을 바꾸지 않습니다. 14게임/23회원/131감사 테스트 데이터로 반복 적용 전후 모든 행·함수 소유자·ACL·RLS 보존을 검사합니다. 이는 운영 데이터 원본을 검증한 결과는 아닙니다. legacy-contract 검사는 일반/후세인 273건의 원본 응답·SQLSTATE·오류 문구·상태 일치를 검증하며, 신규 일반 게임의 별도 권한 검사도 수행합니다.
+
+최종 검토 보완: gamePolicyVersion=1은 001이 이미 쓰던 값이므로 신규 판정에 단독 사용하지 않습니다. 수정된 003이 새 일반 게임에만 normalScorePolicyVersion=1을 부여합니다. 표식 없는 기존 버전 게임은 001/002 권한도 유지합니다. SQL_FINAL_REVIEW.md를 참조하세요.

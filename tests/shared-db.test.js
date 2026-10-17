@@ -198,6 +198,33 @@ test('server stamps policy only on new shared creation and version cannot be cha
  const normal=await rpc(0,'golf_create',[createRound('normal',2),'생성자']);assert.equal(normal.round.slotPolicyVersion,undefined);
 });
 
+test('003 preserves 001/002 versioned normal permissions and existing Hussein gameplay',async()=>{
+ let normal=await rpc(0,'golf_create',[createRound('normal',2),'생성자']);
+ assert.equal(normal.round.gamePolicyVersion,1);assert.equal(normal.round.normalScorePolicyVersion,undefined);
+ await db.exec('reset role');await db.query('insert into public.golf_members(game_id,user_id,name) values($1,$2,$3)',[normal.id,users[1],'기존 참가자']);
+ const sharedNormalRound=createRound('normal',4);sharedNormalRound.sharedSlots=true;sharedNormalRound.holes[0].par=3;
+ let sharedNormal=await connectAll(await rpc(0,'golf_create',[sharedNormalRound,'기존 공동 일반 생성자']));
+ let hussein=await connectAll(await rpc(0,'golf_create',[rosterRound(),'생성자']));
+ const before=await snapshot();await db.exec(readFileSync(new URL('../supabase/003-normal-shared-scorecard.sql',import.meta.url),'utf8'));assert.equal(await snapshot(),before);
+ const unchanged=await snapshot();
+ await assert.rejects(()=>rpc(2,'golf_join',[normal.code,'새 참가자']),/혼자 관리/);
+ await assert.rejects(()=>mutate(1,normal,'score',{hole:0,player:0,value:4}),/생성자만/);assert.equal(await snapshot(),unchanged);
+ normal=await mutate(0,normal,'score',{hole:0,player:0,value:4});normal=await mutate(0,normal,'score',{hole:0,player:1,value:5});
+ normal=await mutate(0,normal,'rate',{value:200000});normal=await mutate(0,normal,'paid',{hole:0,value:[100,200]});
+ normal=await mutate(0,normal,'settled',{player:0,value:100});normal=await mutate(0,normal,'cash',{value:[{type:'collect',amount:100}]});
+ normal=await mutate(0,normal,'lock',{hole:0,value:true});normal=await mutate(0,normal,'lock',{hole:0,value:false});
+ assert.equal(normal.round.normalScorePolicyVersion,undefined);
+ for(let p=0;p<4;p++)hussein=await mutate(p,hussein,'score',{hole:0,player:p,value:3+p});
+ hussein=await mutate(1,hussein,'near',{hole:0,value:1});hussein=await mutate(1,hussein,'lock',{hole:0,value:true});
+ await assert.rejects(()=>mutate(1,hussein,'lock',{hole:0,value:false}),/생성자/);hussein=await mutate(0,hussein,'lock',{hole:0,value:false});
+ hussein=await mutate(0,hussein,'paid',{hole:0,value:[100,200,300,400]});hussein=await mutate(0,hussein,'settled',{player:0,value:100});
+ assert.equal(hussein.round.normalScorePolicyVersion,undefined);
+ sharedNormal=await mutate(1,sharedNormal,'score',{hole:0,player:0,value:4});
+ sharedNormal=await mutate(1,sharedNormal,'near',{hole:0,value:1});
+ assert.equal(sharedNormal.round.normalScorePolicyVersion,undefined);
+ assert.equal(sharedNormal.round.holes[0].near,1);
+});
+
 test('preview normal migration preserves all rows, allows any registered participant to edit without slots',async()=>{
  await db.exec('reset role');const before=await snapshot();
  const patch=readFileSync(new URL('../supabase/003-normal-shared-scorecard.sql',import.meta.url),'utf8');
@@ -205,8 +232,8 @@ test('preview normal migration preserves all rows, allows any registered partici
  await db.exec(patch);await db.exec(patch);assert.equal(await snapshot(),before);
  assert.deepEqual((await db.query("select oid,proacl,proowner from pg_proc where proname in ('golf_create','golf_join','golf_mutate') order by oid")).rows,metadata);
  for(let n=1;n<=4;n++){
-  let g=await rpc(0,'golf_create',[{...createRound('normal',n),sharedSlots:true,slotPolicyVersion:1},'생성자']);
-  assert.equal(g.round.sharedSlots,false);assert.equal(g.round.slotPolicyVersion,undefined);
+  let g=await rpc(0,'golf_create',[{...createRound('normal',n),sharedSlots:true,slotPolicyVersion:1,normalScorePolicyVersion:99},'생성자']);
+  assert.equal(g.round.sharedSlots,false);assert.equal(g.round.slotPolicyVersion,undefined);assert.equal(g.round.normalScorePolicyVersion,1);
   for(let actor=1;actor<4;actor++)g=await rpc(actor,'golf_join',[g.code,`참가자${actor}`]);
   const full=await snapshot();
   await assert.rejects(()=>rpc(4,'golf_join',[g.code,'다섯째']),/참가 인원/);assert.equal(await snapshot(),full);
@@ -229,6 +256,7 @@ test('preview normal migration preserves all rows, allows any registered partici
    assert.equal(await snapshot(),unchanged);
   }
   const unchanged=await snapshot();
+  await assert.rejects(()=>mutate(0,g,'normalScorePolicyVersion',{value:0}),/지원하지/);
   await assert.rejects(()=>mutate(4,g,'score',{hole:0,player:0,value:5}),/참가자만/);
   await assert.rejects(()=>mutate(1,g,'score',{hole:0,player:0,value:5},g.revision-1),/다른 참가자/);
   assert.equal(await snapshot(),unchanged);

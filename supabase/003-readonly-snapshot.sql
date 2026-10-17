@@ -32,6 +32,6 @@ select pubname,schemaname,tablename from pg_publication_tables
 where schemaname='public' and tablename in ('golf_games','golf_members','golf_audit')
 order by pubname,tablename;
 select round->>'mode' mode,round->'gamePolicyVersion' game_policy,
- round->'slotPolicyVersion' slot_policy,count(*) games
-from public.golf_games group by 1,2,3 order by 1,2,3;
+ round->'slotPolicyVersion' slot_policy,round->'normalScorePolicyVersion' normal_score_policy,count(*) games
+from public.golf_games group by 1,2,3,4 order by 1,2,3,4;
 commit;
