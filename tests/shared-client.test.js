@@ -272,3 +272,46 @@ test("opening old sharedSlots=true game never opts it into player selection",asy
  const api=new SharedGames(f.client);
  try {await api.open("game");assert.equal(api.game.round.slotPolicyVersion,undefined);await assert.rejects(()=>api.claimSlot(0),/기존 게임/);assert.equal(f.calls.length,0);}finally{api.stop();}
 });
+
+test("watch waits for member reads started synchronously by realtime subscribe", async () => {
+  const f = fixture();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const original = f.client.from;
+  f.client.from = table => table === "golf_members" ? {
+    select(){return this}, eq(){return this}, order(){return this},
+    async then(resolve, reject) { return gate.then(() => ({data:[{user_id:"owner",slot:null}]})).then(resolve,reject); },
+  } : original(table);
+  f.client.channel = () => { const c = {on(){return c},subscribe(cb){cb("SUBSCRIBED");return c}};return c; };
+  const api = new SharedGames(f.client);
+  let completed = false;
+  const watching = api.watch(f.row).then(() => { completed = true; });
+  try {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(completed, false, "watch must not return before the current member query completes");
+    release(); await watching;
+    assert.deepEqual(api.members, [{user_id:"owner",slot:null}]);
+  } finally { release(); await watching; api.stop(); }
+});
+
+test("switching games does not skip member fetch behind a previous game's pending refresh", async () => {
+  const f = fixture(), original = f.client.from;
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let reads = 0;
+  f.client.from = table => table === "golf_members" ? {
+    select(){return this}, eq(){return this}, order(){return this},
+    then(resolve,reject){ const first = ++reads === 1; return (first ? gate : Promise.resolve()).then(()=>({data:[{user_id:first?"old":"owner",slot:null}]})).then(resolve,reject); },
+  } : original(table);
+  const api = new SharedGames(f.client);
+  const oldWatch = api.watch(f.row);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 10));
+    const next = {...f.row,id:"next"}; f.setRow(next);
+    await api.watch(next);
+    assert.equal(api.members[0]?.user_id,"owner");
+    release(); await oldWatch;
+    assert.equal(api.game.id,"next");
+    assert.equal(api.members[0]?.user_id,"owner");
+  } finally { release(); await oldWatch; api.stop(); }
+});

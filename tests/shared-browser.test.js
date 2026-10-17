@@ -146,10 +146,10 @@ async function stopOrigin() {
   await closed;
 }
 const sdk = `export function createClient(){
- const call=body=>fetch('/__db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,user:window.__testUser})}).then(r=>r.json());
+ const call=async body=>{if(body.table==='golf_members' && window.__holdMembers){window.__membersPending=true;await window.__holdMembers;}return fetch('/__db',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...body,user:window.__testUser})}).then(r=>r.json());};
  return {auth:{async getUser(){return {data:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}},async getSession(){return {data:{session:null}}},async signInAnonymously(){return {data:{session:{user:{id:'00000000-0000-4000-8000-'+String(window.__testUser+1).padStart(12,'0')}}}}}},
  rpc:(rpc,args)=>call({rpc,args}),from(table){let body={table};const q={select(){return q},eq(k,v){body.filter=[k,v];return q},order(field,o={}){body.order={field,...o};return q},limit(n){body.limit=n;return q},single(){body.single=true;return q},then(a,b){return call(body).then(a,b)}};return q},
- channel(){let cb,es;const c={on(e,f,fn){cb=fn;return c},subscribe(fn){es=new EventSource('/__events');es.onmessage=()=>cb();es.onopen=()=>fn('SUBSCRIBED');return c},close(){es?.close()}};return c},removeChannel(c){c.close()}}}
+ channel(){let cb,es;const c={on(e,f,fn){cb=fn;return c},subscribe(fn){fn('SUBSCRIBED');es=new EventSource('/__events');es.onmessage=()=>cb();es.onopen=()=>fn('SUBSCRIBED');return c},close(){es?.close()}};return c},removeChannel(c){c.close()}}}
 `;
 const browserType = process.env.BROWSER === "webkit" ? webkit : chromium;
 const browser = await browserType.launch({
@@ -222,7 +222,17 @@ try {
   await waitSaved(pages[0]);
   assert.match(await pages[0].locator("#shared-checks").innerText(), /로그인: 확인됨.*서버 조회: 확인됨.*RPC: 미확인/);
   assert.equal(await pages[0].locator("#shared-name").inputValue(), "생성자");
+  // Hold the first member response while subscribe starts a refresh before watch.
+  // Completion must wait for membership, rather than rendering an empty roster.
+  await pages[0].evaluate(() => { window.__holdMembers = new Promise(resolve => { window.__releaseMembers = resolve; }); });
   await pages[0].locator('[data-shared="create"]').click();
+  await pages[0].waitForFunction(() => window.__membersPending);
+  assert.equal(await pages[0].locator('[data-shared="local"]').isDisabled(), true,
+    "create must still be waiting for the member query");
+  await pages[0].evaluate(() => { window.__releaseMembers(); window.__holdMembers = null; });
+  await pages[0].locator('#shared-slot').waitFor();
+  await waitSaved(pages[0]);
+  assert.equal(await pages[0].locator('.shared-panel').getAttribute('data-member-state'), 'ready');
   await pages[0]
     .getByRole("heading", { name: "공동 테스트", exact: true })
     .waitFor();
@@ -243,6 +253,10 @@ try {
     await pages[i].locator('[data-shared="join"]').click();
     await pages[i].locator("#shared-slot").waitFor();
     await waitSaved(pages[i]);
+    assert.equal(await pages[i].locator('.shared-panel').getAttribute('data-member-state'), 'ready');
+    const membership = (await db.query('select slot from public.golf_members where user_id=$1', [users[i]])).rows;
+    assert.equal(membership.length, 1);
+    assert.equal(membership[0].slot, null);
     assert.equal(await pages[i].getByRole("alert").count(), 0);
     if (i === 1) assert.equal(new URL(pages[i].url()).hash, "");
   }
@@ -513,6 +527,12 @@ try {
   console.log(
     "PASS: 5 isolated mobile browsers + PostgreSQL: create/join/capacity/all-player edits/event sync/Near/lock/owner unlock/history/offline/list/full local preservation/config and auth failures/service worker stale cache/network outage reload/uncached project-path fallback/negative control/shared recovery",
   );
+} catch (error) {
+  for (const [i, p] of pages.entries()) {
+    console.error(`Browser ${i} failure state:`, await p.locator('.shared-panel').innerText().catch(() => 'page unavailable'));
+  }
+  console.error('Browser page errors:', errors);
+  throw error;
 } finally {
   await browser.close();
   await stopOrigin();

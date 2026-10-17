@@ -17,7 +17,7 @@ export class SharedGames {
     this.timer = null;
     this.generation = 0;
     this.busy = false;
-    this.reading = false;
+    this.reading = null;
     this.realtime = false;
     this.diagnostics = new Map();
     this.requestId = 0;
@@ -168,11 +168,20 @@ export class SharedGames {
     await this.refresh();
     return this.game;
   }
-  async refresh() {
-    if (!this.game || this.reading) return;
-    this.reading = true;
-    const generation = this.generation,
-      id = this.game.id;
+  refresh() {
+    if (!this.game) return Promise.resolve();
+    // Realtime may start the first read before watch() reaches refresh().
+    // Every caller must await that read, and an old game's read must not block
+    // a new watch or clear its in-flight promise when it finishes.
+    if (this.reading) return this.reading;
+    const generation = this.generation, id = this.game.id;
+    const pending = Promise.resolve().then(() => this.readSnapshot(generation, id)).finally(() => {
+      if (this.reading === pending) this.reading = null;
+    });
+    this.reading = pending;
+    return pending;
+  }
+  async readSnapshot(generation, id) {
     try {
       const results = await Promise.allSettled([
         this.request("golf_games.refresh", "query", () => this.client.from("golf_games").select("*").eq("id", id).single(), data => validateRound(data.round)),
@@ -193,8 +202,6 @@ export class SharedGames {
         this.onStatus(
           "서버 조회 실패 · 연결 상태 미확인 · 자동 재시도 중",
         );
-    } finally {
-      this.reading = false;
     }
   }
   async claimSlot(slot) {
@@ -231,6 +238,7 @@ export class SharedGames {
   }
   stop() {
     this.generation++;
+    this.reading = null;
     for (const [key, entry] of this.diagnostics) if (entry.group === "query") this.diagnostics.delete(key);
     this.checks.query = "미확인";
     if (this.timer) clearInterval(this.timer);
