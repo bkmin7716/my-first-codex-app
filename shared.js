@@ -111,6 +111,19 @@ export class SharedGames {
       await this.rpc("golf_create", { p_round: payload, p_name: name }),
     );
   }
+  async rosterByCode(code) {
+    await this.identity();
+    const {data}=await this.request('rpc.golf_roster_by_code','rpc',()=>this.client.rpc('golf_roster_by_code',{p_code:code}),data=>{if(!Array.isArray(data?.players))throw Error('선수 목록 응답 오류');});
+    return data;
+  }
+  async joinPlayer(code, player=null, expectedName=null) {
+    await this.identity();
+    return this.watch(await this.rpc('golf_join_player',{p_code:code,p_player:player,p_expected_name:expectedName}));
+  }
+  async createPlayer(round, player) {
+    validateRound(round);await this.identity();
+    return this.watch(await this.rpc('golf_create_player',{p_round:round,p_player:player}));
+  }
   async join(code, name) {
     await this.identity();
     return this.watch(

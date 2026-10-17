@@ -342,3 +342,15 @@ test('normal shared creation supports 1-4 named players without a player-slot po
   }finally{api.stop();}
  }
 });
+
+test('player lookup/join/create use dedicated atomic RPCs, never a join-then-slot sequence',async()=>{
+ const f=fixture(),original=f.client.rpc.bind(f.client);const lookup=[];
+ f.client.rpc=async(name,args)=>{if(name==='golf_roster_by_code'){lookup.push(args);return {data:{players:[{player:0,name:'가',taken:false}],is_member:false}};}return original(name,args);};
+ const api=new SharedGames(f.client);
+ try{
+  assert.equal((await api.rosterByCode('ABCDEF123456')).players[0].name,'가');assert.deepEqual(lookup,[{p_code:'ABCDEF123456'}]);
+  await api.joinPlayer('ABCDEF123456',0,'가');assert.equal(f.calls.at(-1).name,'golf_join_player');assert.deepEqual(f.calls.at(-1).args,{p_code:'ABCDEF123456',p_player:0,p_expected_name:'가'});
+  await api.createPlayer(createRound('normal',2),1);assert.equal(f.calls.at(-1).name,'golf_create_player');assert.equal(f.calls.at(-1).args.p_player,1);
+  assert.ok(f.calls.every(c=>c.name!=='golf_join'&&c.name!=='golf_mutate'));
+ }finally{api.stop();}
+});

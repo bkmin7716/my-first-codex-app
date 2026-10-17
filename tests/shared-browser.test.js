@@ -15,6 +15,12 @@ async function setStroke(page, player, stroke) {
  if(value!==''&&(value< -1||value>4))await group.locator('details').evaluate(el=>el.open=true);
  await group.locator(`[data-value="${value}"]`).click();
 }
+async function joinAs(page,code,slot=null){
+ await page.locator('#shared-code').fill(code);await page.locator('[data-shared="lookup"]').click();
+ await page.waitForFunction(()=>!document.querySelector('[data-shared="local"]').disabled&&document.querySelector('[data-shared="join"]'));
+ if(slot!==null)await page.locator('#shared-join-player').selectOption(String(slot));
+ await page.locator('[data-shared="join"]').click();await page.locator('#shared-score-0').waitFor();
+}
 const db = new PGlite();
 await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);
  create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
@@ -22,6 +28,7 @@ await db.exec(`create role anon;create role authenticated;create schema auth;cre
 await db.exec(
   readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8"),
 );
+await db.exec(readFileSync(new URL('../supabase/004-code-player-join.sql',import.meta.url),'utf8'));
 const users = Array.from(
   { length: 5 },
   (_, i) => `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
@@ -39,10 +46,11 @@ async function request(body) {
   await db.query("select set_config('request.jwt.claim.sub',$1,false)", [uid]);
   await db.exec("set role authenticated");
   if (body.rpc) {
-    if (body.rpc === "golf_mutate") mutationRequests.push(structuredClone(body.args));
+    if (["golf_mutate","golf_join_player","golf_create_player"].includes(body.rpc)) mutationRequests.push(structuredClone(body.args));
     const keys = {
       golf_create: ["p_round", "p_name"],
       golf_join: ["p_code", "p_name"],
+      golf_roster_by_code:["p_code"],golf_join_player:["p_code","p_player","p_expected_name"],golf_create_player:["p_round","p_player"],
       golf_mutate: ["p_game", "p_revision", "p_action", "p_detail"],
     }[body.rpc];
     if (!keys) throw Error("test rpc");
@@ -51,7 +59,7 @@ async function request(body) {
       keys.map((k) => body.args[k]),
     );
     for (const res of events) res.write("data: changed\n\n");
-    return [result.rows[0].g];
+    return body.rpc==='golf_roster_by_code'?result.rows[0].g:[result.rows[0].g];
   }
   if (!["golf_games", "golf_members", "golf_audit"].includes(body.table))
     throw Error("test table");
@@ -211,7 +219,7 @@ try {
     await p.waitForFunction(() => document.querySelector('#connection-signal')?.dataset.state === 'ready');
     assert.equal(await p.evaluate(()=>window.__connectionProbes>0),true);
     assert.equal(await p.locator('#shared-debug').evaluate(el=>el.open),false);
-    await p.locator("#shared-name").fill(i === 0 ? "생성자" : `참가자${i}`);
+    assert.equal(await p.locator("#shared-launch,#shared-name").count(),0);
   }
   const healthPage=pages[4];
   await healthPage.evaluate(()=>{window.__connectionFailure=true;window.dispatchEvent(new Event('online'));});
@@ -249,12 +257,12 @@ try {
   await pages[0].reload();
   await pages[0].getByRole("button", {name:"공동 게임으로 복사",exact:true}).click();
   assert.equal(await pages[0].locator("#shared-source").inputValue(), round.id);
-  await pages[0].locator("#shared-name").fill("생성자");
+  await pages[0].locator("#shared-owner-player").selectOption("3");
   await pages[0].locator("#shared-debug summary").click();
   await pages[0].locator('[data-shared="check"]').click();
   await waitSaved(pages[0]);
   assert.match(await pages[0].locator("#shared-checks").textContent(), /로그인: 확인됨.*서버 조회: 확인됨.*RPC: 미확인/);
-  assert.equal(await pages[0].locator("#shared-name").inputValue(), "생성자");
+  assert.equal(await pages[0].locator("#shared-owner-player").inputValue(), "3");
   // Hold the first member response while subscribe starts a refresh before watch.
   // Completion must wait for membership, rather than rendering an empty roster.
   await pages[0].evaluate(() => { window.__holdMembers = new Promise(resolve => { window.__releaseMembers = resolve; }); });
@@ -263,7 +271,7 @@ try {
   assert.equal(await pages[0].locator('[data-shared="local"]').isDisabled(), true,
     "create must still be waiting for the member query");
   await pages[0].evaluate(() => { window.__releaseMembers(); window.__holdMembers = null; });
-  await pages[0].locator('#shared-slot').waitFor();
+  await pages[0].locator('#shared-score-0').waitFor();
   await waitSaved(pages[0]);
   assert.equal(await pages[0].locator('.shared-panel').getAttribute('data-member-state'), 'ready');
   await pages[0]
@@ -276,26 +284,32 @@ try {
     await pages[0].locator(".shared-panel .card strong").first().innerText()
   ).replace("참여 코드 ", "");
   assert.match(code, /^[A-F0-9]{12}$/);
+  // Two browsers see the same free player. The second stale choice must fail atomically.
+  await pages[2].locator('#shared-code').fill(code);await pages[2].locator('[data-shared="lookup"]').click();
+  await pages[2].locator('#shared-join-player').selectOption('1');
   for (let i = 1; i < 4; i++) {
     if (i === 1) {
       await pages[i].goto(origin + basePath + "/#join=" + code);
       await pages[i].reload();
-      await pages[i].locator("#shared-name").fill("참가자1");
+
     }
-    await pages[i].locator("#shared-code").fill(code);
-    await pages[i].locator('[data-shared="join"]').click();
-    await pages[i].locator("#shared-slot").waitFor();
+    if(i===2){
+      await pages[2].locator('[data-shared="join"]').click();
+      await pages[2].getByRole('alert').filter({hasText:'이미 다른 계정'}).waitFor();
+      assert.equal(await pages[2].locator('#shared-join-player option[value="1"]').isDisabled(),true);
+    }
+    await joinAs(pages[i],code,[3,1,2,0][i]);
     await waitSaved(pages[i]);
     assert.equal(await pages[i].locator('.shared-panel').getAttribute('data-member-state'), 'ready');
     const membership = (await db.query('select slot from public.golf_members where user_id=$1', [users[i]])).rows;
     assert.equal(membership.length, 1);
-    assert.equal(membership[0].slot, null);
+    assert.equal(membership[0].slot,[3,1,2,0][i]);
     assert.equal(await pages[i].getByRole("alert").count(), 0);
     if (i === 1) assert.equal(new URL(pages[i].url()).hash, "");
   }
   await pages[4].locator("#shared-code").fill(code);
-  await pages[4].locator('[data-shared="join"]').click();
-  await pages[4].getByRole("alert").filter({ hasText: "참가 인원" }).waitFor();
+  await pages[4].locator('[data-shared="lookup"]').click();
+  await pages[4].getByText("정원이 찼거나 참가를 허용하지 않는 게임입니다.").waitFor();
   await waitSynced();
   assert.equal(await pages[0].locator("#shared-score-0").count(), 1);
   // No account has selected a slot: unbound members can edit every player and lock.
@@ -319,7 +333,7 @@ try {
   await waitSaved(pages[1]); await waitSynced();
   assert.equal(await pages[1].locator('#shared-score-1 button').first().isDisabled(),true);
   assert.equal(await pages[1].locator('[data-shared="lock"]').isDisabled(),true);
-  assert.equal((await db.query('select count(slot)::int n from public.golf_members')).rows[0].n,0);
+  assert.equal((await db.query('select count(slot)::int n from public.golf_members')).rows[0].n,4);
   await pages[0].locator('[data-shared="lock"]').click();
   await waitSaved(pages[0]); await waitSynced();
   // Restore this isolated fixture's inputs before the pre-existing preservation checks.
@@ -329,44 +343,10 @@ try {
   }
   await pages[1].locator('#shared-near').selectOption('');
   await waitSaved(pages[1]); await waitSynced();
-  await pages[1].locator("#shared-slot").selectOption("3");
-  await pages[1].locator("#shared-slot").evaluate(el => el.blur());
-  for (let i=0;i<4;i++) {
-    if (i === 1) {
-      assert.equal(await pages[i].locator("#shared-slot").inputValue(), "");
-      assert.equal(await pages[i].locator('[data-shared="claim"]').isDisabled(), true);
-    }
-    const selected = String([3,1,2,0][i]);
-    await pages[i].locator("#shared-slot").selectOption(selected);
-    // Native select blur, tab navigation and a server/name refresh must keep
-    // a non-first selection, including when slot 1 is still available.
-    await pages[i].locator("#shared-slot").focus();
-    await pages[i].locator("#shared-slot").press("Tab");
-    await pages[i].locator('[data-page="summary"]').click();
-    assert.equal(await pages[i].locator("#shared-slot").inputValue(), selected);
-    await pages[i].locator('[data-page="score"]').click();
-    if (i === 1) {
-      await pages[i].waitForTimeout(5200); // include the five-second poll
-      assert.equal(await pages[i].locator("#shared-slot").inputValue(), selected);
-      await pages[i].locator("#shared-settings summary").click();
-      await pages[i].locator("#shared-my-name").fill("연결 전 이름");
-      await pages[i].locator('[data-shared="rename"]').click();
-      await waitSaved(pages[i]); await waitSynced();
-      assert.equal(await pages[i].locator("#shared-slot").inputValue(), selected);
-      assert.match(await pages[i].locator(".shared-panel").innerText(), /슬롯 2: 선수 2/);
-    }
-    await pages[i].locator("#shared-slot").focus();
-    await pages[i].locator('[data-shared="claim"]').click();
-    await waitSaved(pages[i]); await waitSynced();
-    const roster = (await db.query("select user_id,slot from public.golf_members order by slot")).rows;
-    assert.equal(roster.find(m => m.user_id === users[i]).slot, Number(selected));
-    const current = (await db.query("select round from public.golf_games")).rows[0].round;
-    assert.deepEqual(current.holes, round.holes);
-    assert.deepEqual(current.initial, round.initial);
-    assert.deepEqual(current.settled, round.settled);
-    assert.deepEqual(current.cash, round.cash);
-    assert.deepEqual(current.players, round.players);
-  }
+  const linked=queue.then(async()=>{await db.exec('reset role');return (await db.query('select user_id,slot from public.golf_members order by slot')).rows;});queue=linked.catch(()=>{});
+  const roster=await linked;for(let i=0;i<4;i++)assert.equal(roster.find(m=>m.user_id===users[i]).slot,[3,1,2,0][i]);
+  for(const p of pages)assert.equal(await p.locator('#shared-slot,[data-shared="claim"]').count(),0);
+  await pages[3].locator('#shared-settings summary').click();await pages[3].locator('#shared-my-name').fill('참가자3');await pages[3].locator('[data-shared="rename"]').click();await waitSaved(pages[3]);await waitSynced();await pages[3].locator('#shared-settings summary').click();
   assert.equal(await pages[0].locator('#shared-player-name-0').isVisible(),false);
   assert.equal(await pages[0].locator('[data-initial="0"]').isVisible(),false);
   await pages[0].locator('#shared-settings summary').click();
@@ -393,7 +373,8 @@ try {
     assert.match(await p.locator(".score.current-hussein").innerText(), /현재 후세인/);
     assert.equal(await p.locator(".score.current-hussein").evaluate(e=>getComputedStyle(e).backgroundColor), "rgb(255, 244, 204)");
   }
-  assert.ok(mutationRequests.some(a=>a.p_action==='slot' && a.p_detail.value===1));
+  assert.ok(mutationRequests.some(a=>a.p_player===1));
+  assert.equal(mutationRequests.some(a=>a.p_action==='slot'),false);
   assert.ok(mutationRequests.some(a=>a.p_action==='player_name' && a.p_detail.player===1 && a.p_detail.value==='민수'));
   assert.ok(mutationRequests.some(a=>a.p_action==='initial' && JSON.stringify(a.p_detail.value)===JSON.stringify([2,1,0,3])));
   for (let i = 0; i < 4; i++) {
@@ -472,7 +453,7 @@ try {
   await pages[0].locator('[data-initial="0"]').selectOption('0');
   await waitSaved(pages[0]);
   await pages[0].locator('#shared-settings summary').click();
-  assert.equal(await pages[0].locator("#shared-slot").inputValue(), "");
+  assert.equal(await pages[0].locator("#shared-slot").count(), 0);
   assert.equal(await pages[0].locator("#shared-score-0").count(),1);
   assert.deepEqual(await pages[0].evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   // New comparison must also be shown by the shared UI (old comparison gave Hussein a win).
@@ -502,7 +483,7 @@ try {
   const legacy=await legacyTask;
   await pages[1].locator('[data-shared="lobby"]').click();
   await pages[1].locator('#shared-code').fill(legacy.code);
-  await pages[1].locator('[data-shared="join"]').click();
+  await joinAs(pages[1],await pages[1].locator('#shared-code').inputValue(),1);
   await pages[1].locator('#shared-score-0').waitFor();
   assert.equal(await pages[1].locator('#shared-slot').count(),0);
   assert.equal(await pages[1].locator('[data-shared="lock"]').isDisabled(),false);
@@ -511,22 +492,21 @@ try {
   assert.equal(await pages[1].locator('#shared-score-0 button').first().isDisabled(),true);
   await pages[1].locator('[data-shared="lobby"]').click();
   await pages[1].locator('#shared-code').fill(code);
-  await pages[1].locator('[data-shared="join"]').click();
+  await joinAs(pages[1],await pages[1].locator('#shared-code').inputValue());
   await pages[1].locator('#shared-score-0').waitFor();
   assert.equal(await pages[1].locator('#shared-slot').count(),0);
   // Normal and Hussein share the exact same 18-hole card; normal has no betting controls.
   await pages[0].locator('[data-shared="lobby"]').click();
   await pages[0].locator('#shared-source').selectOption('new-normal');
   await pages[0].locator('#shared-normal-count').selectOption('2');
-  await pages[0].locator('#shared-name').fill('일반 생성자');
+
   await pages[0].locator('#shared-draft-player-0').fill('일반 A');
   await pages[0].locator('#shared-draft-player-1').fill('일반 B');
   await pages[0].locator('[data-shared="create"]').click();
   await pages[0].locator('#shared-score-0').waitFor();
   assert.equal(await pages[0].locator('.relative-score').count(),2);
   const normalCode=(await pages[0].locator('.shared-panel .card strong').first().innerText()).replace('참여 코드 ','');
-  await pages[4].locator('#shared-code').fill(normalCode);
-  await pages[4].locator('[data-shared="join"]').click();
+  await joinAs(pages[4],normalCode,1);
   await pages[4].locator('#shared-score-0').waitFor();
   for(const p of [pages[0],pages[4]]) {
     assert.equal(await p.locator('#shared-slot,#shared-near,[data-shared="lock"],.result,[data-pay],[data-settle]').count(),0);
@@ -545,7 +525,7 @@ try {
   });
   queue=memberInspection.catch(()=>{});
   const normalMembers=await memberInspection;
-  assert.equal(normalMembers.length,2);assert.ok(normalMembers.every(m=>m.slot===null));
+  assert.equal(normalMembers.length,2);assert.deepEqual(normalMembers.map(m=>m.slot).sort(),[0,1]);
   await pages[4].locator('[data-shared-relative="1"][data-value="1"]').click();await waitSaved(pages[4]);
   await pages[0].waitForFunction(()=>document.querySelector('#shared-score-1').dataset.stroke==='');
   assert.equal(await pages[0].locator('#shared-score-1 > small').innerText(),'');
@@ -578,7 +558,7 @@ try {
     p.on("pageerror", e => errors.push(e.message));
     await p.goto(origin + basePath + "/");
     await p.getByRole("button", {name:"참여 코드로 참여",exact:true}).click();
-    await p.locator("#shared-name").fill("실패 테스트");
+
     await p.locator("#shared-code").fill("123456789ABC");
     await p.locator("#shared-debug summary").click();
     await p.locator('[data-shared="check"]').click();
@@ -587,7 +567,7 @@ try {
     const text = await p.locator(".shared-panel").innerText();
     assert.doesNotMatch(text, /sb_secret_|실시간 연결됨|RPC: 실행 확인됨/);
     assert.match(text, configuration === "missing" ? /배포 설정: 누락/ : configuration === "invalid" ? /URL 형식 오류/ : /로그인: 실패/);
-    assert.equal(await p.locator("#shared-name").inputValue(), "실패 테스트");
+
     assert.equal(await p.locator("#shared-code").inputValue(), "123456789ABC");
     await context.close();
   }
@@ -608,7 +588,7 @@ try {
   }, round);
   await pwa.reload();
   await pwa.getByRole("button", {name:"공동 게임으로 복사",exact:true}).waitFor();
-  await pwa.locator("#shared-launch").waitFor();
+  await pwa.getByRole("button",{name:"새 공동 게임 생성",exact:true}).waitFor();
   assert.deepEqual(await pwa.evaluate(() => JSON.parse(localStorage.getItem("golf-hussein-v1")).rounds[0]), round);
   // WebKit's offline emulation rejects SW responses before the worker can
   // answer (microsoft/playwright#42775). Keep Chromium's emulation check,
@@ -627,7 +607,7 @@ try {
     const app = await cache.match(new URL("./app.js", location.href));
     const shared = await cache.match(new URL("./shared-ui.js", location.href));
     return app && shared && !(await app.text()).includes("STALE_APP") &&
-      (await shared.text()).includes("shared-launch");
+      (await shared.text()).includes("shared-join-player");
   });
   await pwa.evaluate(() => { window.__oldDocument = true; });
   await stopOrigin();
@@ -657,9 +637,9 @@ try {
   await new Promise(resolve => server.listen(Number(new URL(origin).port), "127.0.0.1", resolve));
   await pwa.goto(origin + basePath + "/");
   await pwa.getByRole("button", {name:"참여 코드로 참여",exact:true}).click();
-  await pwa.locator("#shared-name").fill("참가자3");
+
   await pwa.locator("#shared-code").fill(code);
-  await pwa.locator('[data-shared="join"]').click();
+  await joinAs(pwa,code);
   await pwa.waitForFunction(() => document.querySelector("#shared-score-0") || document.querySelector('[role="alert"]'));
   assert.equal(await pwa.getByRole("alert").count(), 0,
     await pwa.locator(".shared-panel").innerText());

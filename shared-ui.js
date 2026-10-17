@@ -5,19 +5,15 @@ import { scoreButtons, relativeTotals, relativeText, createRound, calculate } fr
 import { load } from "./storage.js";
 
 const localRoot = document.querySelector("#app");
-const launcher = document.createElement("div");
-launcher.className = "shared-launcher";
-launcher.innerHTML =
-  '<button class="primary" id="shared-launch">일반·후세인 공동 입력 ↗</button>';
-localRoot.before(launcher);
 const signal = document.createElement("div");
 signal.className = "connection-bar";
 signal.innerHTML = '<span id="connection-signal" role="status" aria-live="polite" data-state="checking"><span class="signal-dot" aria-hidden="true"></span><span class="signal-label">연결 확인 중</span></span><button id="connection-retry" hidden>Retry</button>';
-launcher.before(signal);
+localRoot.before(signal);
 const panel = document.createElement("main");
 panel.className = "shell shared-panel";
 panel.hidden = true;
 localRoot.before(panel);
+let joinRoster=null, joinPlayer="", ownerPlayer="0";
 let api = null, connectPending = null, healthPending = null, healthError = false, settingsOpen = false, settingsGame = null,
   hole = 0,
   busy = false,
@@ -30,7 +26,6 @@ let api = null, connectPending = null, healthPending = null, healthError = false
   selectedSource = "",
   draftInitial = null,
   draftPlayers = null,
-  draftName = "",
   draftCode = new URLSearchParams(location.hash.slice(1)).get("join") || "";
 const esc = (v) =>
   String(v ?? "").replace(
@@ -48,10 +43,7 @@ const playerNameDrafts = new Map();
 const isSharedRound = r => r.slotPolicyVersion === 1;
 const hasModernPolicy = r => r.gamePolicyVersion === 1 || r.slotPolicyVersion === 1;
 
-// A selection is a local draft, never inferred from a refreshed server row.
-const slotDrafts = new Map();
-const slotDraftKey = () => `${api.game.id}:${api.userId}`;
-const actions = {
+const actions = { player_join:"선수 선택 참가",
   score: "타수 변경",
   near: "Near 변경",
   lock: "홀 잠금 변경",
@@ -128,18 +120,13 @@ function lobby() {
  const source = selectedSource==="new-normal"?createRound("normal",4):localRounds().find(r=>r.id===selectedSource);
  const players = draftPlayers || source?.players || ["","","",""];
  const initial = draftInitial || source?.initial || [0,1,2,3];
- return `<h1>공동 플레이 · 일반 게임 관리</h1><div class="card"><label for="shared-name">계정 표시 이름 (선수 이름과 별개)</label><input id="shared-name" maxlength="40" value="${esc(draftName)}"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(draftCode)}"><button class="primary" data-shared="join">참여 코드로 참가</button><p>참여 코드를 입력하면 모든 선수의 점수를 함께 기록할 수 있습니다. 선수 슬롯 연결은 점수 입력에 필요하지 않습니다. 선수 이름과 초기 순위는 생성자만 수정합니다.</p></div><div class="card"><h3>게임 생성 · 선수 등록</h3><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="" ${selectedSource===""?"selected":""}>새 후세인 공동 게임</option><option value="new-normal" ${selectedSource==="new-normal"?"selected":""}>새 일반 공동 게임</option>${localRounds().map(r=>`<option value="${esc(r.id)}" ${selectedSource===r.id?"selected":""}>${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`).join("")}</select>${selectedSource==="new-normal"?`<label for="shared-normal-count">선수 수</label><select id="shared-normal-count">${[1,2,3,4].map(n=>`<option value="${n}" ${players.length===n?"selected":""}>${n}명</option>`).join("")}</select>`:""}<p>생성자가 선수 이름을 등록합니다. 복사 시 기존 점수·정산 기록의 선수 순서를 유지하세요.</p>${players.map((name,i)=>`<div class="player-setup-row"><div><label for="shared-draft-player-${i}">선수 ${i+1} 이름</label><input id="shared-draft-player-${i}" data-draft-player="${i}" maxlength="40" value="${esc(name)}"></div>${!source || source.mode==='hussein'?`<div><label for="shared-draft-rank-${i}">초기 순위</label><select id="shared-draft-rank-${i}" data-draft-player-rank="${i}">${[0,1,2,3].map(rank=>`<option value="${rank}" ${initial.indexOf(i)===rank?"selected":""}>${rank+1}등</option>`).join("")}</select></div>`:""}</div>`).join("")}<button class="primary" data-shared="create">게임 생성</button><p>일반·후세인 모두 참여자 누구나 모든 선수 점수를 입력합니다. 슬롯 선택은 점수 입력의 필수 단계가 아닙니다.</p></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList===null?"":gamesList.length?gamesList.map(g=>`<div class="card"><strong>${esc(g.round.course || "라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized?"최종 확정":"진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join(""):"<p>참여한 게임이 없습니다.</p>"}</div>`;
+ return `<h1>공동 플레이 · 일반 게임 관리</h1><div class="card"><label for="shared-code">참여 코드</label><input id="shared-code" autocapitalize="characters" maxlength="12" value="${esc(draftCode)}"><button data-shared="lookup">선수 목록 조회</button>${joinRoster?`<p>${esc(joinRoster.course||'공동 게임')} · ${joinRoster.mode==='normal'?'일반':'후세인'}</p>${joinRoster.is_member&&joinRoster.slot!=null?`<p>연결된 선수: ${esc(joinRoster.name)}</p>`:`<label for="shared-join-player">본인 선수</label><select id="shared-join-player"><option value="">선택하세요</option>${joinRoster.players.map(p=>`<option value="${p.player}" ${joinPlayer===String(p.player)?'selected':''} ${p.taken?'disabled':''}>선수 ${p.player+1} · ${esc(p.name)}${p.taken?' (이미 연결됨)':''}</option>`).join('')}</select>`}<button class="primary" data-shared="join" ${disabled(!joinRoster.can_join||(!joinRoster.is_member&&joinPlayer===''))}>${joinRoster.is_member?'기존 참가자로 이어하기':'선택한 선수로 참가'}</button>${!joinRoster.can_join?'<p>정원이 찼거나 참가를 허용하지 않는 게임입니다.</p>':''}`:''}<p>코드를 조회하고 본인을 선택하세요. 표시 이름과 선수 연결은 참가 시 자동 설정됩니다.</p></div><div class="card"><h3>게임 생성 · 선수 등록</h3><label for="shared-source">복사할 라운드</label><select id="shared-source"><option value="" ${selectedSource===""?"selected":""}>새 후세인 공동 게임</option><option value="new-normal" ${selectedSource==="new-normal"?"selected":""}>새 일반 공동 게임</option>${localRounds().map(r=>`<option value="${esc(r.id)}" ${selectedSource===r.id?"selected":""}>${esc(r.date)} · ${esc(r.course || "이름 없는 골프장")}</option>`).join("")}</select>${selectedSource==="new-normal"?`<label for="shared-normal-count">선수 수</label><select id="shared-normal-count">${[1,2,3,4].map(n=>`<option value="${n}" ${players.length===n?"selected":""}>${n}명</option>`).join("")}</select>`:""}<p>생성자가 선수 이름을 등록합니다. 복사 시 기존 점수·정산 기록의 선수 순서를 유지하세요.</p>${players.map((name,i)=>`<div class="player-setup-row"><div><label for="shared-draft-player-${i}">선수 ${i+1} 이름</label><input id="shared-draft-player-${i}" data-draft-player="${i}" maxlength="40" value="${esc(name)}"></div>${!source || source.mode==='hussein'?`<div><label for="shared-draft-rank-${i}">초기 순위</label><select id="shared-draft-rank-${i}" data-draft-player-rank="${i}">${[0,1,2,3].map(rank=>`<option value="${rank}" ${initial.indexOf(i)===rank?"selected":""}>${rank+1}등</option>`).join("")}</select></div>`:""}</div>`).join("")}<label for="shared-owner-player">생성자 본인 선수</label><select id="shared-owner-player">${players.map((name,i)=>`<option value="${i}" ${ownerPlayer===String(i)?'selected':''}>선수 ${i+1}${name?' · '+esc(name):''}</option>`).join('')}</select><button class="primary" data-shared="create">게임 생성</button><p>일반·후세인 모두 참여자 누구나 모든 선수 점수를 입력합니다. 슬롯 선택은 점수 입력의 필수 단계가 아닙니다.</p></div><button data-shared="list">내 공동 게임 불러오기</button><div id="shared-list">${gamesList===null?"":gamesList.length?gamesList.map(g=>`<div class="card"><strong>${esc(g.round.course || "라운드")}</strong><p>${esc(g.round.date)} · ${g.finalized?"최종 확정":"진행 중"}</p><button data-open-game="${esc(g.id)}">열기</button></div>`).join(""):"<p>참여한 게임이 없습니다.</p>"}</div>`;
 }
 function roster(g, r, owner) {
  const me = api.members.find(m=>m.user_id===api.userId);
  const shared = isSharedRound(r);
  const modern = hasModernPolicy(r);
- const key = slotDraftKey();
- const selected = slotDrafts.get(key) || "";
- const available = r.players.map((_,i)=>i).filter(i=>!api.members.some(m=>m.slot===i));
- const valid = available.some(i=>String(i)===selected);
- if(me?.slot!=null)slotDrafts.delete(key);
- return `${shared&&me?.slot!=null?`<p class="badge">내 선수: ${esc(r.players[me.slot])} · 슬롯 ${me.slot+1}</p>`:""}${shared&&!me?`<p role="status">참가자 정보를 확인하지 못했습니다. 서버 조회 진단 결과를 확인하세요. 자동으로 다시 조회합니다.</p>`:""}${shared&&me&&me.slot==null?`<label for="shared-slot">본인 선수 선택 (선택 사항 · 점수 입력에는 불필요)</label><select id="shared-slot" ${disabled(busy||g.finalized)}><option value="" ${!valid?"selected":""}>본인 선수를 선택하세요</option>${r.players.map((name,i)=>`<option value="${i}" ${selected===String(i)&&valid?"selected":""} ${disabled(!available.includes(i))}>${esc(name)} · 슬롯 ${i+1}${available.includes(i)?"":" (이미 선택됨)"}</option>`).join("")}</select><button data-shared="claim" ${disabled(!valid||busy||g.finalized)}>내 선수 슬롯 연결 (선택 사항)</button>`:""}<details class="card game-settings" id="shared-settings" ${settingsOpen?"open":""}><summary>게임 설정</summary><h3>등록 선수</h3>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${shared?(api.members.some(m=>m.slot===i)?"✓ 연결됨":"· 연결 대기"):""}</p>${owner&&modern?`<label for="shared-player-name-${i}">선수 ${i+1} 이름 수정</label><input id="shared-player-name-${i}" data-player-name="${i}" maxlength="40" value="${esc(playerNameDrafts.get(g.id+":"+i) ?? name)}" ${disabled(busy||g.finalized)}><button data-shared="player-name" data-player="${i}" ${disabled(busy||g.finalized)}>선수 이름 저장</button>`:""}`).join("")}${modern?`<label for="shared-my-name">내 계정 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(nameDrafts.get(g.id) ?? me?.name)}" ${disabled(busy||g.finalized)}><button data-shared="rename" ${disabled(busy||g.finalized)}>이름 저장</button><p class="muted">계정 표시 이름은 변경 이력에만 사용합니다. 등록 선수 이름은 바뀌지 않습니다.</p>`:""}${r.mode==='hussein'?`<p>초기 순위</p>${r.initial.map((slot,rank)=>owner&&modern?`<label>${rank+1}등<select data-initial="${rank}" ${disabled(busy||g.finalized||g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>${esc(name)}</option>`).join("")}</select></label>`:`<p>${rank+1}등: ${esc(r.players[slot])}</p>`).join("")}`:""}</details>`;
+ return `${me?.slot!=null?`<p class="badge">내 선수: ${esc(r.players[me.slot])} · 슬롯 ${me.slot+1}</p>`:""}${shared&&!me?`<p role="status">참가자 정보를 확인하지 못했습니다. 서버 조회 진단 결과를 확인하세요. 자동으로 다시 조회합니다.</p>`:""}<details class="card game-settings" id="shared-settings" ${settingsOpen?"open":""}><summary>게임 설정</summary><h3>등록 선수</h3>${r.players.map((name,i)=>`<p>슬롯 ${i+1}: ${esc(name)} ${shared?(api.members.some(m=>m.slot===i)?"✓ 연결됨":"· 연결 대기"):""}</p>${owner&&modern?`<label for="shared-player-name-${i}">선수 ${i+1} 이름 수정</label><input id="shared-player-name-${i}" data-player-name="${i}" maxlength="40" value="${esc(playerNameDrafts.get(g.id+":"+i) ?? name)}" ${disabled(busy||g.finalized)}><button data-shared="player-name" data-player="${i}" ${disabled(busy||g.finalized)}>선수 이름 저장</button>`:""}`).join("")}${modern?`<label for="shared-my-name">내 계정 표시 이름</label><input id="shared-my-name" maxlength="40" value="${esc(nameDrafts.get(g.id) ?? me?.name)}" ${disabled(busy||g.finalized)}><button data-shared="rename" ${disabled(busy||g.finalized)}>이름 저장</button><p class="muted">계정 표시 이름은 변경 이력에만 사용합니다. 등록 선수 이름은 바뀌지 않습니다.</p>`:""}${r.mode==='hussein'?`<p>초기 순위</p>${r.initial.map((slot,rank)=>owner&&modern?`<label>${rank+1}등<select data-initial="${rank}" ${disabled(busy||g.finalized||g.locked_holes.length>0)}>${r.players.map((name,i)=>`<option value="${i}" ${slot===i?"selected":""}>${esc(name)}</option>`).join("")}</select></label>`:`<p>${rank+1}등: ${esc(r.players[slot])}</p>`).join("")}`:""}</details>`;
 }
 function holeWon(x,j){return x.winner==='A'?x.hussein===j:x.winner==='B'?x.allies?.includes(j):false;}
 function holeRole(x,j,first){
@@ -192,42 +179,41 @@ function render() {
 function show() {
   panel.hidden = false;
   localRoot.hidden = true;
-  launcher.hidden = true;
+
   document.body.classList.add("shared-mode");
   render();
 }
-launcher.querySelector("button").addEventListener("click", show);
+
 localRoot.addEventListener("click", (e) => {
   const entry = e.target.closest("[data-shared-entry]");
   if (!entry) return;
-  selectedSource = entry.dataset.source || "";
+  selectedSource = entry.dataset.source || "";ownerPlayer="0";joinRoster=null;joinPlayer="";
   draftPlayers = null; draftInitial = null;
   show();
-  panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-name")?.focus();
+  panel.querySelector(entry.dataset.sharedEntry === "join" ? "#shared-code" : "#shared-source")?.focus();
 });
 panel.addEventListener("input", (e) => {
   if (e.target.dataset.draftPlayer !== undefined) {
     if(!draftPlayers)draftPlayers=[...(localRounds().find(r=>r.id===selectedSource)?.players || ["","","",""])];
     draftPlayers[Number(e.target.dataset.draftPlayer)]=e.target.value;
+    panel.querySelectorAll("#shared-owner-player option").forEach((o,i)=>o.textContent=`선수 ${i+1} · ${draftPlayers[i]||""}`);
   }
   if (e.target.dataset.playerName !== undefined && api?.game) playerNameDrafts.set(api.game.id+":"+e.target.dataset.playerName,e.target.value);
-  if (e.target.id === "shared-slot" && api?.game) slotDrafts.set(slotDraftKey(), e.target.value);
   if (e.target.id === "shared-my-name" && api?.game) nameDrafts.set(api.game.id,e.target.value);
-  if (e.target.id === "shared-name") draftName = e.target.value;
-  if (e.target.id === "shared-code") draftCode = e.target.value;
+  if (e.target.id === "shared-code") {draftCode=e.target.value;joinRoster=null;joinPlayer="";panel.querySelector('[data-shared="join"]')?.setAttribute("disabled","");}
   if (e.target.id === "shared-source") selectedSource = e.target.value;
 });
 panel.addEventListener("focusin", (e) => {
-  if (e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,#shared-slot,[data-initial],[data-player-name],[data-draft-player]")) {
+  if (e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,[data-initial],[data-player-name],[data-draft-player]")) {
     editing = true;
     editRevision = api?.game?.revision;
   }
 });
 panel.addEventListener("focusout", (e) => {
-  if (!e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,#shared-slot,[data-initial],[data-player-name],[data-draft-player]")) return;
+  if (!e.target.matches("[data-shared-score],#shared-near,#shared-rate,#shared-my-name,[data-initial],[data-player-name],[data-draft-player]")) return;
   editing = false;
   // Do not replace the save button between WebKit mousedown and click.
-  if (e.target.id === "shared-my-name" || e.target.id === "shared-slot" || e.target.dataset.playerName !== undefined) { editRevision = null; return; }
+  if (e.target.id === "shared-my-name" || e.target.dataset.playerName !== undefined) { editRevision = null; return; }
   setTimeout(() => {
     if (!busy && !editing && api?.game) render();
   }, 0);
@@ -257,19 +243,15 @@ async function mutate(action, detail, revision) {
 }
 panel.addEventListener("change", (e) => {
   const el = e.target;
-  if (el.id === "shared-normal-count") { draftPlayers=Array.from({length:Number(el.value)},(_,i)=>draftPlayers?.[i]||`선수 ${i+1}`);render();return; }
-  if (el.id === "shared-source") {selectedSource=el.value; draftInitial=null; draftPlayers=null; render();}
+  if(el.id==="shared-join-player"){joinPlayer=el.value;render();return;}
+  if(el.id==="shared-owner-player"){ownerPlayer=el.value;return;}
+  if (el.id === "shared-normal-count") { ownerPlayer="0";draftPlayers=Array.from({length:Number(el.value)},(_,i)=>draftPlayers?.[i]||`선수 ${i+1}`);render();return; }
+  if (el.id === "shared-source") {ownerPlayer="0";selectedSource=el.value; draftInitial=null; draftPlayers=null; render();}
   if (el.dataset.draftPlayerRank !== undefined) {
     const initial=[...(draftInitial || localRounds().find(r=>r.id===selectedSource)?.initial || [0,1,2,3])], rank=initial.indexOf(+el.dataset.draftPlayerRank), other=+el.value;
     [initial[rank],initial[other]]=[initial[other],initial[rank]]; draftInitial=initial; render();
   }
   if (!api?.game) return;
-  if (el.id === "shared-slot") {
-    slotDrafts.set(slotDraftKey(), el.value);
-    const claim = panel.querySelector('[data-shared="claim"]');
-    if (claim) claim.disabled = busy || api.game.finalized || !/^[0-3]$/.test(el.value) || api.members.some(m => m.slot === Number(el.value));
-    return;
-  }
   const revision = editRevision ?? api.game.revision;
   editRevision = null;
   if (el.dataset.sharedScore !== undefined) {
@@ -329,7 +311,7 @@ panel.addEventListener("click", (e) => {
     api?.stop();
     panel.hidden = true;
     localRoot.hidden = false;
-    launcher.hidden = false;
+
     document.body.classList.remove("shared-mode");
     return;
   }
@@ -346,23 +328,28 @@ panel.addEventListener("click", (e) => {
   }
   // Capture before disabling controls or opening the native Safari dialog.
   const playerNameValue = act === "player-name" ? (playerNameDrafts.get(api.game.id+":"+b.dataset.player) ?? panel.querySelector(`#shared-player-name-${b.dataset.player}`).value).trim() : null;
-  const selectedSlot = act === "claim" ? panel.querySelector("#shared-slot")?.value : null;
   run(async () => {
     if (act === "check") {
       const c = await connection();
       gamesList = await c.list();
       return;
     }
+    if(act==='lookup'){
+      const c=await connection();joinRoster=await c.rosterByCode(draftCode.trim());joinPlayer='';return;
+    }
     if (act === "create" || act === "join") {
-      const name = panel.querySelector("#shared-name").value.trim();
-      if (!name || name.length > 40)
-        throw Error("내 표시 이름을 1~40자로 입력하세요.");
-      const code = panel.querySelector("#shared-code").value.trim();
+      const code=draftCode.trim();
       const source = panel.querySelector("#shared-source").value;
       selectedSource = source;
       const c = await connection();
       if (act === "join") {
-        await c.join(code, name);
+        if(!joinRoster)throw Error("참여 코드로 선수 목록을 먼저 조회하세요.");
+        try {
+          await c.joinPlayer(code,joinPlayer===""?null:Number(joinPlayer),joinRoster.players.find(p=>String(p.player)===joinPlayer)?.name??null);
+        } catch(cause) {
+          try { joinRoster=await c.rosterByCode(code);joinPlayer=""; } catch {}
+          throw cause;
+        }
         historyReplace();
       } else {
         const r = source === "new-normal" ? createRound("normal",draftPlayers?.length||4) : source
@@ -374,7 +361,7 @@ panel.addEventListener("click", (e) => {
         if(!source && !draftPlayers)throw Error("선수 4명의 이름을 먼저 입력하세요.");
         r.sharedSlots = r.mode === "hussein";
         if(r.sharedSlots)r.slotPolicyVersion=1;else delete r.slotPolicyVersion;
-        await c.create(r, name);
+        await c.createPlayer(r,Number(ownerPlayer));
       }
       hole = 0;
       page = "score";
@@ -393,14 +380,6 @@ panel.addEventListener("click", (e) => {
       playerNameDrafts.delete(api.game.id+":"+b.dataset.player);
     }
     if (act === "rename") { await mutate("name", {value:(nameDrafts.get(api.game.id) ?? panel.querySelector("#shared-my-name").value).trim()}); nameDrafts.delete(api.game.id); }
-    if (act === "claim") {
-      if (!/^[0-3]$/.test(selectedSlot ?? "") || api.members.some(m => m.slot === Number(selectedSlot)))
-        throw Error("연결할 수 있는 선수 슬롯을 다시 선택하세요.");
-      if (confirm("선택한 선수가 본인인지 확인하세요. 기존 기록과 선수 이름은 유지되며 연결 후 슬롯을 변경할 수 없습니다.")) {
-        await api.claimSlot(Number(selectedSlot));
-        slotDrafts.delete(slotDraftKey());
-      }
-    }
     if (act === "invite") {
       const url = new URL(location.href);
       url.hash = `join=${api.game.code}`;
