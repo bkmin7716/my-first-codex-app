@@ -16,6 +16,7 @@ test('확장 입력과 잠금은 실제 타수 1~30 범위를 보존한다',()=>
  for(const par of [3,4,5]){
   const html=scoreButtons(par,null,0,true,true);
   assert.match(html,/미입력/);assert.match(html,/data-value="0"/);
+  for(const value of [-1,0,1,2,3,4,5])assert.match(html.split("<details>")[0],new RegExp(`data-value="${value}"`));
   assert.match(html,new RegExp(`data-value="${1-par}"`));
   assert.match(html,new RegExp(`data-value="${30-par}"`));
   assert.equal((html.match(/<button /g)||[]).length,(html.match(/disabled/g)||[]).length);

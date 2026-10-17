@@ -11,7 +11,7 @@ async function setStroke(page, player, stroke) {
  const group=page.locator(`#shared-score-${player}`);
  const par=await page.locator('h2').filter({hasText:/번 홀 · PAR/}).innerText().then(t=>Number(t.match(/PAR (\d+)/)[1]));
  const value=stroke===''?'':Number(stroke)-par;
- if(value!==''&&(value< -2||value>2))await group.locator('details').evaluate(el=>el.open=true);
+ if(value!==''&&(value< -1||value>5))await group.locator('details').evaluate(el=>el.open=true);
  await group.locator(`[data-value="${value}"]`).click();
 }
 const db = new PGlite();
