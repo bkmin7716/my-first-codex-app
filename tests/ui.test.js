@@ -39,3 +39,12 @@ test('PAR 버튼으로 여러 선수 입력·확장·미입력·다시 불러오
   await click({view:'summary'});assert.match(root.innerHTML,/OUT/);assert.match(root.innerHTML,/IN/);assert.match(root.innerHTML,/TOTAL/);
  }
 });
+test('PAR 5 더블파 확장 입력은 10타로 저장된다',async()=>{
+ for(const mode of ['normal','hussein']){
+  await click({act:'new-'+mode});await change({par:'0'},'5');await click({act:'play'});
+  assert.match(root.innerHTML,/\+5 \(더블파\)/);
+  await click({relative:'0',value:'5'});
+  assert.equal(JSON.parse(memory.value).rounds[0].holes[0].scores[0],10);
+  await click({view:'summary'});assert.match(root.innerHTML,/OUT \+5 · IN — · TOTAL \+5/);
+ }
+});
