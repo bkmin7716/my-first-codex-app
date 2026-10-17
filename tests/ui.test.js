@@ -26,3 +26,49 @@ test('화면 7 현재·다음 후세인 구분 및 미완료·무승부·연합�
  assert.match(root.innerHTML,/연합군 승/);assert.equal((root.innerHTML.match(/✓ 승리/g)||[]).length,3);
  assert.equal((root.innerHTML.match(/이번 홀 2점 · 200,000 VND/g)||[]).length,3);
 });
+
+test('PAR 버튼으로 여러 선수 입력·확장·미입력·다시 불러오기',async()=>{
+ for(const mode of ['normal','hussein']){
+  await click({act:'new-'+mode});await click({act:'play'});
+  assert.match(root.innerHTML,/PAR 4/);
+  for(let i=0;i<4;i++)await click({relative:String(i),value:'0'});
+  let round=JSON.parse(memory.value).rounds[0];assert.deepEqual(round.holes[0].scores,[4,4,4,4]);
+  await click({relative:'0',value:'-3'});await click({relative:'1',value:'4'});
+  round=JSON.parse(memory.value).rounds[0];assert.deepEqual(round.holes[0].scores,[1,8,4,4]);
+  await click({relative:'0',value:'-3'});assert.equal(JSON.parse(memory.value).rounds[0].holes[0].scores[0],null);
+  await click({view:'summary'});assert.match(root.innerHTML,/OUT/);assert.match(root.innerHTML,/IN/);assert.match(root.innerHTML,/TOTAL/);
+ }
+});
+test('PAR 5 더블파 확장 입력은 10타로 저장된다',async()=>{
+ for(const mode of ['normal','hussein']){
+  await click({act:'new-'+mode});await change({par:'0'},'5');await click({act:'play'});
+  assert.match(root.innerHTML,/\+5 \(더블파\)/);
+  await click({relative:'0',value:'5'});
+  assert.equal(JSON.parse(memory.value).rounds[0].holes[0].scores[0],10);
+  await click({view:'summary'});assert.match(root.innerHTML,/OUT \+5 · IN — · TOTAL \+5/);
+ }
+});
+test('일반 1~4인 PAR 카드: 입력/미입력 합계와 일반 메뉴 보존',async()=>{
+ for(let n=1;n<=4;n++){
+  await click({act:'new-normal'});await change({field:'count'},String(n));await click({act:'play'});
+  assert.equal((root.innerHTML.match(/class="relative-score"/g)||[]).length,n);
+  assert.doesNotMatch(root.innerHTML,/data-field="near"|data-view="settlement"|class="result|현재 후세인/);
+  await click({relative:'0',value:'0'});await click({hole:'17'});await click({relative:'0',value:'2'});
+  const round=JSON.parse(memory.value).rounds[0];assert.equal(round.holes[0].scores[0],4);assert.equal(round.holes[17].scores[0],6);
+  await click({view:'summary'});
+  assert.match(root.innerHTML,/data-total="out-0">0</);assert.match(root.innerHTML,/data-total="in-0">\+2</);assert.match(root.innerHTML,/data-total="total-0">\+2</);
+  if(n>1)assert.match(root.innerHTML,/data-total="total-1">—</);
+ }
+});
+
+test('일반/후세인 선택 버튼 재클릭은 파와 확장 점수를 비우며 재선택 가능',async()=>{
+ for(const mode of ['normal','hussein']){
+  await click({act:'new-'+mode});await change({par:'0'},'5');await click({act:'play'});
+  assert.doesNotMatch(root.innerHTML,/data-value=""|>미입력< /);
+  for(const value of ['0','-1','4','-3','5']){
+   await click({relative:'0',value});assert.equal(JSON.parse(memory.value).rounds[0].holes[0].scores[0],5+Number(value));
+   await click({relative:'0',value});assert.equal(JSON.parse(memory.value).rounds[0].holes[0].scores[0],null);
+   assert.match(root.innerHTML,/<small aria-live="polite"><\/small>/);
+  }
+ }
+});

@@ -156,10 +156,10 @@ begin
  -- Mark every new game; existing versionless normal games retain legacy rights.
  p_round:=p_round||jsonb_build_object('gamePolicyVersion',1);
  -- Stamp only the newly inserted game; never update an existing game.
- if p_round->>'mode'='hussein' or p_round->'sharedSlots'='true'::jsonb then
-  p_round:=p_round||jsonb_build_object('sharedSlots',true,'slotPolicyVersion',1);
+ if p_round->>'mode'='hussein' then
+  p_round:=(p_round-'normalScorePolicyVersion')||jsonb_build_object('sharedSlots',true,'slotPolicyVersion',1);
  else
-  p_round:=p_round-'slotPolicyVersion';
+  p_round:=(p_round-'slotPolicyVersion')||jsonb_build_object('sharedSlots',false,'normalScorePolicyVersion',1);
  end if;
  perform public.golf_validate(p_round);
  insert into public.golf_games(owner_id,round) values(auth.uid(),p_round) returning * into g;
@@ -187,9 +187,9 @@ begin
  if p_name is null or length(trim(p_name)) not between 1 and 40 then raise exception '표시 이름을 1~40자로 입력하세요'; end if;
  if exists(select 1 from public.golf_members where game_id=g.id and user_id=auth.uid()) then return g; end if;
  if g.finalized then raise exception '최종 확정된 게임입니다'; end if;
- if g.round->>'mode'='normal' and g.round->'slotPolicyVersion' is distinct from '1'::jsonb then raise exception '일반 게임은 생성자 혼자 관리합니다'; end if;
+ if g.round->>'mode'='normal' and g.round->'slotPolicyVersion' is distinct from '1'::jsonb and g.round->'normalScorePolicyVersion' is distinct from '1'::jsonb then raise exception '일반 게임은 생성자 혼자 관리합니다'; end if;
  perform public.golf_validate(g.round);
- if (select count(*) from public.golf_members where game_id=g.id)>=jsonb_array_length(g.round->'players') then raise exception '참가 인원이 모두 찼습니다'; end if;
+ if (select count(*) from public.golf_members where game_id=g.id)>=(case when g.round->>'mode'='normal' and g.round->'normalScorePolicyVersion'='1'::jsonb then 4 else jsonb_array_length(g.round->'players') end) then raise exception '참가 인원이 모두 찼습니다'; end if;
  insert into public.golf_members(game_id,user_id,name,slot) values(g.id,auth.uid(),trim(p_name),null);
  insert into public.golf_audit(game_id,actor_id,actor_name,action,detail) values(g.id,auth.uid(),trim(p_name),'join','{}');
  -- Broadcast membership changes through the game row, too.
@@ -265,10 +265,18 @@ begin
  insert into public.golf_audit(game_id,actor_id,actor_name,action,detail) values(g.id,auth.uid(),who,p_action,d);
  return g;
  end if;
+ -- Only normal games stamped by this CREATE function use the new policy.
+ -- gamePolicyVersion=1 alone is not enough: 001 already used that marker.
+ -- Versionless games have already returned through the unchanged legacy branch.
+ if g.round->>'mode'='normal' and g.round->'normalScorePolicyVersion'='1'::jsonb
+    and g.round->'slotPolicyVersion' is distinct from '1'::jsonb
+    and p_action in ('near','lock','finalize','initial','slot','rate','paid','settled','cash') then
+  raise exception '일반 게임에서는 점수 입력과 이름 변경만 지원합니다';
+ end if;
  if jsonb_typeof(g.round->'players') is distinct from 'array' then raise exception '선수 배열 오류'; end if;
  n:=jsonb_array_length(g.round->'players');
  shared:=coalesce(g.round->'slotPolicyVersion'='1'::jsonb,false);
- if g.round->>'mode'='normal' and not shared and auth.uid()<>g.owner_id and p_action<>'name' then raise exception '일반 게임은 생성자만 수정할 수 있습니다'; end if;
+ if g.round->>'mode'='normal' and not shared and auth.uid()<>g.owner_id and p_action<>'name' and (g.round->'normalScorePolicyVersion' is distinct from '1'::jsonb or p_action<>'score') then raise exception '일반 게임은 생성자만 수정할 수 있습니다'; end if;
  if n not between 1 and 4 then raise exception '선수 인원 오류'; end if;
  if jsonb_typeof(p_detail) is distinct from 'object' then raise exception '요청 상세는 JSON 객체여야 합니다'; end if;
  if p_action is null or p_action not in ('name','player_name','slot','finalize','score','near','lock','initial','rate','paid','settled','cash') then raise exception '지원하지 않는 변경입니다'; end if;

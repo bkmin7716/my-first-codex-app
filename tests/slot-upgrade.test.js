@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 import {createRound} from '../engine.js';
 
-test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by repeated versioned migration',async()=>{
+test('14 fixture games / 23 members / 131 audits remain byte-for-byte unchanged by repeated versioned migration',async()=>{
  const db=new PGlite();
  try {
   await db.exec(`create role anon;create role authenticated;create schema auth;create table auth.users(id uuid primary key);
@@ -17,26 +17,37 @@ test('8 legacy games / 13 members / 30 audits remain byte-for-byte unchanged by 
   for(const id of ids)await db.query('insert into auth.users values($1)',[id]);
   async function rpc(i,name,args){await db.exec('reset role');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[ids[i]]);await db.exec('set role authenticated');return (await db.query(`select to_jsonb(public.${name}(${args.map((_,i)=>'$'+(i+1)).join(',')})) g`,args)).rows[0].g;}
   const games=[];
-  for(let i=0;i<8;i++){
-   const r=createRound('hussein');r.sharedSlots=i<5?true:null;r.holes[0].par=3;r.holes[0].paid=[1,2,3,4];r.settled=[10,20,30,40];
-   let g=await rpc(0,'golf_create',[r,'생성자']);if(i<5)g=await rpc(1,'golf_join',[g.code,'참가자']);games.push(g);
+  for(let i=0;i<14;i++){
+   const r=createRound(i%2?'normal':'hussein');r.sharedSlots=i<5?true:null;r.holes[0].par=3;r.holes[0].paid=[1,2,3,4];r.settled=[10,20,30,40];
+   let g=await rpc(0,'golf_create',[r,'생성자']);if(i<9)g=await rpc(1,'golf_join',[g.code,'참가자']);games.push(g);
   }
-  for(let i=0;i<17;i++){const g=games[0];games[0]=await rpc(0,'golf_mutate',[g.id,g.revision,'score',{hole:0,player:i%4,value:4}]);}
+  for(let i=0;i<108;i++){const g=games[0];games[0]=await rpc(0,'golf_mutate',[g.id,g.revision,'score',{hole:0,player:i%4,value:4}]);}
   await db.exec('reset role');
   const snapshot=async()=>(await db.query(`select
    (select jsonb_agg(to_jsonb(g) order by id) from public.golf_games g) games,
    (select jsonb_agg(to_jsonb(m) order by game_id,user_id) from public.golf_members m) members,
    (select jsonb_agg(to_jsonb(a) order by id) from public.golf_audit a) audit`)).rows[0];
-  const before=await snapshot();assert.equal(before.games.length,8);assert.equal(before.members.length,13);assert.equal(before.audit.length,30);
+  const before=await snapshot();assert.equal(before.games.length,14);assert.equal(before.members.length,23);assert.equal(before.audit.length,131);
   assert.equal(before.games.filter(g=>g.round.sharedSlots===true).length,5);assert.ok(before.members.every(m=>m.slot===null));
   const metadata=async()=>(await db.query(`select (select jsonb_agg(jsonb_build_array(oid,proowner,proacl) order by oid) from pg_proc where proname in ('golf_validate','golf_create','golf_join','golf_mutate')) funcs,
    (select jsonb_agg(to_jsonb(p) order by policyname) from pg_policies p where schemaname='public') policies`)).rows[0];
   const meta=await metadata();
+  const readonlySql=readFileSync(new URL('../supabase/003-readonly-snapshot.sql',import.meta.url),'utf8');
+  const inspectionBefore=(await db.exec(readonlySql)).filter(r=>r.fields?.length);
+  assert.deepEqual(await snapshot(),before);
   const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8');
   await db.exec(migration);await db.exec(migration);
   const patch=readFileSync(new URL('../supabase/002-shared-score-access.sql',import.meta.url),'utf8');
   await db.exec(patch);await db.exec(patch);
+  const preview=readFileSync(new URL("../supabase/003-normal-shared-scorecard.sql",import.meta.url),"utf8");
+  await db.exec(preview);await db.exec(preview);
   assert.deepEqual(await snapshot(),before);assert.deepEqual(await metadata(),meta);
+  const inspectionAfter=(await db.exec(readonlySql)).filter(r=>r.fields?.length);
+  assert.deepEqual(inspectionAfter[0].rows,inspectionBefore[0].rows);
+  // Function bodies intentionally change; signatures/OIDs/owners/ACL/settings do not.
+  const attrs=rows=>rows.map(({definition,...row})=>row);
+  assert.deepEqual(attrs(inspectionAfter[1].rows),attrs(inspectionBefore[1].rows));
+  assert.deepEqual(inspectionAfter.slice(2),inspectionBefore.slice(2));
   assert.equal((await db.query("select count(*)::int n from pg_indexes where schemaname='public' and indexname='golf_member_slot'")).rows[0].n,0);
   await db.exec(readFileSync(new URL('../supabase/001-player-slots-precheck.sql',import.meta.url),'utf8'));
   await db.exec(readFileSync(new URL('../supabase/001-player-slots-postcheck.sql',import.meta.url),'utf8'));

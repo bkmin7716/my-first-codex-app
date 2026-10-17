@@ -197,3 +197,71 @@ test('server stamps policy only on new shared creation and version cannot be cha
  const before=await snapshot();await assert.rejects(()=>mutate(0,g,'slotPolicyVersion',{value:1}),/지원하지/);assert.equal(await snapshot(),before);
  const normal=await rpc(0,'golf_create',[createRound('normal',2),'생성자']);assert.equal(normal.round.slotPolicyVersion,undefined);
 });
+
+test('003 preserves 001/002 versioned normal permissions and existing Hussein gameplay',async()=>{
+ let normal=await rpc(0,'golf_create',[createRound('normal',2),'생성자']);
+ assert.equal(normal.round.gamePolicyVersion,1);assert.equal(normal.round.normalScorePolicyVersion,undefined);
+ await db.exec('reset role');await db.query('insert into public.golf_members(game_id,user_id,name) values($1,$2,$3)',[normal.id,users[1],'기존 참가자']);
+ const sharedNormalRound=createRound('normal',4);sharedNormalRound.sharedSlots=true;sharedNormalRound.holes[0].par=3;
+ let sharedNormal=await connectAll(await rpc(0,'golf_create',[sharedNormalRound,'기존 공동 일반 생성자']));
+ let hussein=await connectAll(await rpc(0,'golf_create',[rosterRound(),'생성자']));
+ const before=await snapshot();await db.exec(readFileSync(new URL('../supabase/003-normal-shared-scorecard.sql',import.meta.url),'utf8'));assert.equal(await snapshot(),before);
+ const unchanged=await snapshot();
+ await assert.rejects(()=>rpc(2,'golf_join',[normal.code,'새 참가자']),/혼자 관리/);
+ await assert.rejects(()=>mutate(1,normal,'score',{hole:0,player:0,value:4}),/생성자만/);assert.equal(await snapshot(),unchanged);
+ normal=await mutate(0,normal,'score',{hole:0,player:0,value:4});normal=await mutate(0,normal,'score',{hole:0,player:1,value:5});
+ normal=await mutate(0,normal,'rate',{value:200000});normal=await mutate(0,normal,'paid',{hole:0,value:[100,200]});
+ normal=await mutate(0,normal,'settled',{player:0,value:100});normal=await mutate(0,normal,'cash',{value:[{type:'collect',amount:100}]});
+ normal=await mutate(0,normal,'lock',{hole:0,value:true});normal=await mutate(0,normal,'lock',{hole:0,value:false});
+ assert.equal(normal.round.normalScorePolicyVersion,undefined);
+ for(let p=0;p<4;p++)hussein=await mutate(p,hussein,'score',{hole:0,player:p,value:3+p});
+ hussein=await mutate(1,hussein,'near',{hole:0,value:1});hussein=await mutate(1,hussein,'lock',{hole:0,value:true});
+ await assert.rejects(()=>mutate(1,hussein,'lock',{hole:0,value:false}),/생성자/);hussein=await mutate(0,hussein,'lock',{hole:0,value:false});
+ hussein=await mutate(0,hussein,'paid',{hole:0,value:[100,200,300,400]});hussein=await mutate(0,hussein,'settled',{player:0,value:100});
+ assert.equal(hussein.round.normalScorePolicyVersion,undefined);
+ sharedNormal=await mutate(1,sharedNormal,'score',{hole:0,player:0,value:4});
+ sharedNormal=await mutate(1,sharedNormal,'near',{hole:0,value:1});
+ assert.equal(sharedNormal.round.normalScorePolicyVersion,undefined);
+ assert.equal(sharedNormal.round.holes[0].near,1);
+});
+
+test('preview normal migration preserves all rows, allows any registered participant to edit without slots',async()=>{
+ await db.exec('reset role');const before=await snapshot();
+ const patch=readFileSync(new URL('../supabase/003-normal-shared-scorecard.sql',import.meta.url),'utf8');
+ const metadata=(await db.query("select oid,proacl,proowner from pg_proc where proname in ('golf_create','golf_join','golf_mutate') order by oid")).rows;
+ await db.exec(patch);await db.exec(patch);assert.equal(await snapshot(),before);
+ assert.deepEqual((await db.query("select oid,proacl,proowner from pg_proc where proname in ('golf_create','golf_join','golf_mutate') order by oid")).rows,metadata);
+ for(let n=1;n<=4;n++){
+  let g=await rpc(0,'golf_create',[{...createRound('normal',n),sharedSlots:true,slotPolicyVersion:1,normalScorePolicyVersion:99},'생성자']);
+  assert.equal(g.round.sharedSlots,false);assert.equal(g.round.slotPolicyVersion,undefined);assert.equal(g.round.normalScorePolicyVersion,1);
+  for(let actor=1;actor<4;actor++)g=await rpc(actor,'golf_join',[g.code,`참가자${actor}`]);
+  const full=await snapshot();
+  await assert.rejects(()=>rpc(4,'golf_join',[g.code,'다섯째']),/참가 인원/);assert.equal(await snapshot(),full);
+  assert.equal((await rpc(1,'golf_join',[g.code,'재접속'])).revision,g.revision);
+  for(let actor=0;actor<4;actor++)for(let p=0;p<n;p++)g=await mutate(actor,g,'score',{hole:17,player:p,value:p+4});
+  g=await mutate(1,g,'score',{hole:0,player:0,value:null});
+  g=await mutate(2,g,'score',{hole:0,player:0,value:4});
+  assert.equal(g.round.holes[17].scores.length,n);
+  assert.deepEqual(g.round.holes[17].scores,Array.from({length:n},(_,i)=>i+4));
+  assert.equal((await as(0,'select count(slot)::int n from public.golf_members where game_id=$1',[g.id])).rows[0].n,0);
+  await assert.rejects(()=>mutate(1,g,'slot',{value:0}),/일반 게임/);
+  await assert.rejects(()=>mutate(1,g,'player_name',{player:0,value:'탈취'}),/생성자만/);
+  const saved=structuredClone(g.round);
+  g=await mutate(0,g,'player_name',{player:0,value:'생성자 수정'});
+  const renamed=structuredClone(saved);renamed.players[0]='생성자 수정';assert.deepEqual(g.round,renamed);
+  g=await mutate(1,g,'name',{value:'참가자 표시 이름'});assert.deepEqual(g.round,renamed);
+  for(const actor of [0,1,2,3])for(const action of ['near','lock','finalize','initial','slot','rate','paid','settled','cash'])for(const value of [true,false]){
+   const unchanged=await snapshot();
+   await assert.rejects(()=>mutate(actor,g,action,{hole:17,player:0,value}),/일반 게임/);
+   assert.equal(await snapshot(),unchanged);
+  }
+  const unchanged=await snapshot();
+  await assert.rejects(()=>mutate(0,g,'normalScorePolicyVersion',{value:0}),/지원하지/);
+  await assert.rejects(()=>mutate(4,g,'score',{hole:0,player:0,value:5}),/참가자만/);
+  await assert.rejects(()=>mutate(1,g,'score',{hole:0,player:0,value:5},g.revision-1),/다른 참가자/);
+  assert.equal(await snapshot(),unchanged);
+ }
+ // Legacy path remains byte-for-byte equivalent; no policy version is stamped.
+ let legacy=await legacyGame(createRound('normal',4));legacy=await rpc(1,'golf_join',[legacy.code,'참가자']);
+ legacy=await mutate(1,legacy,'score',{hole:0,player:1,value:4});assert.equal(legacy.round.gamePolicyVersion,undefined);
+});

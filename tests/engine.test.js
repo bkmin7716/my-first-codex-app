@@ -32,7 +32,7 @@ test('25 이미 지급한 홀 수정 시 지급 기록 보존 및 재정산 경�
 test('26 단가 변경·Near 변경에 따른 지급 예정 재계산',()=>{const r=make([[3,4,6,7]],3,0);r.rate=200000;assert.equal(calculate(r).pre.expected,800000);r.holes[0].near=2;assert.deepEqual(calculate(r).points,[0,3,1,0]);});
 test('27 일반 1~4명 전·후반 타수 및 입력홀 Par 대비',()=>{for(let n=1;n<=4;n++){const r=createRound('normal',n);r.holes[0].scores=Array(n).fill(5);r.holes[9].scores=Array(n).fill(3);const t=calculate(r).totals[0];assert.deepEqual(t,{front:5,back:3,total:8,played:2,relative:0});}});
 test('28 입력 오류·이후 미완료 지급 재정산 표시',()=>{assert.throws(()=>calc([[0,4,5,6]]));assert.throws(()=>calc([[3.2,4,5,6]]));const r=make([[3,4,6,7],[3,4,6,7]]);r.holes[1].paid=calculate(r).holes[1].expected;r.holes[0].scores[0]=null;assert.equal(calculate(r).holes[1].stale,true);});
-test('29 오프라인 자산 누락 없음·상대 경로 Pages 지원',()=>{const sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');for(const asset of ['index.html','app.js','engine.js','storage.js','style.css','manifest.webmanifest','icon-192.png','icon-512.png']){assert.ok(existsSync(new URL('../'+asset,import.meta.url)));assert.ok(sw.includes(asset));}});
+test('29 오프라인 자산 누락 없음·상대 경로 Pages 지원',()=>{const sw=readFileSync(new URL('../sw.js',import.meta.url),'utf8');for(const asset of ['index.html','app.js','engine.js','scorecard.js','storage.js','style.css','manifest.webmanifest','icon-192.png','icon-512.png']){assert.ok(existsSync(new URL('../'+asset,import.meta.url)));assert.ok(sw.includes(asset));}});
 
 test('30 첫 홀 팀은 초기 순위, 현재 홀 최종 순위와 구분',()=>{
  const r=make([[3,4,6,7]]);r.initial=[3,2,1,0];

@@ -50,3 +50,7 @@
 .game-settings>summary,#shared-debug>summary{cursor:pointer;min-height:44px;display:list-item;align-content:center;font-weight:650}
 .shared-panel #shared-debug{margin-bottom:12px;font-size:13px}
 .shared-panel .game-settings{margin:12px 0}
+
+.relative-score{min-width:0;flex:1}.score-buttons{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.score-buttons button{min-width:42px;padding:8px}.relative-score button[aria-pressed="true"]{background:#123d31;color:white;box-shadow:0 0 0 2px #bc9c52}.relative-score details{margin:10px 0}.relative-score summary{cursor:pointer}.score{grid-template-columns:minmax(0,1fr);gap:12px}
+
+ .scorecard-scroll{overflow-x:auto;max-width:100%;margin:16px 0}.scorecard{border-collapse:separate;border-spacing:0;min-width:1450px;width:100%}.scorecard th,.scorecard td{text-align:center;padding:8px;border-bottom:1px solid #e1e5db;min-width:62px}.scorecard .player-fixed{position:sticky;left:0;background:#f7f8f3;z-index:1;min-width:100px;max-width:130px;overflow-wrap:anywhere}.scorecard small{display:block;font-size:11px}.scorecard button.active{background:#123d31;color:white}

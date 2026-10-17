@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {PGlite} from '@electric-sql/pglite';
 import {createRound} from '../engine.js';
 const oldSql=readFileSync(new URL('./fixtures/legacy-schema.sql',import.meta.url),'utf8');
-const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8');
+const migration=readFileSync(new URL('../supabase/001-player-slots.sql',import.meta.url),'utf8')+readFileSync(new URL('../supabase/003-normal-shared-scorecard.sql',import.meta.url),'utf8');
 const users=Array.from({length:5},(_,i)=>`00000000-0000-4000-8000-${String(i+1).padStart(12,'0')}`);
 const fixtures=[];
 for(const mode of ['normal','hussein'])for(const flag of ['missing','null','true']){
@@ -33,7 +33,8 @@ async function call(db,user,name,args){await db.exec('reset role');await db.quer
 test('original vs migrated legacy normal/Hussein RPCs: same results, errors, permissions and mutations',async()=>{
  const before=await setup(false),after=await setup(true);let checks=0;
  try{
-  async function compare(user,name,args,label){const a=await call(before,user,name,args),b=await call(after,user,name,args);assert.deepEqual(b,a,label);assert.deepEqual(await state(after),await state(before),label+' state');checks++;return b;}
+  async function compare(user,name,args,label){
+   const a=await call(before,user,name,args),b=await call(after,user,name,args);assert.deepEqual(b,a,label);assert.deepEqual(await state(after),await state(before),label+' state');checks++;return b;}
   for(const [i,{id,r}] of fixtures.entries()){
    const code=`LEGACY${String(i).padStart(6,'0')}`;
    await compare(1,'golf_join',[code,'  참가자1  '],'legacy join including normal');
